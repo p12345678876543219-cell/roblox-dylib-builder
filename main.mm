@@ -1,9 +1,8 @@
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <QuartzCore/QuartzCore.h>
-#import <MobileCoreServices/MobileCoreServices.h>
 
-@interface RobloxNeonMenu : NSObject <UIDocumentPickerDelegate>
+@interface RobloxNeonMenu : NSObject
 + (instancetype)sharedInstance;
 @end
 
@@ -13,13 +12,9 @@
     UIView *tab1View;
     UIView *tab2View;
     WKWebView *webView;
-    UILabel *statusLabel;
-    UILabel *fileNameLabel;
+    WKWebView *tikTokWebView;
     UISegmentedControl *segmentedControl;
     UIButton *closeBtn;
-    UIButton *pickIpaBtn;
-    UIButton *runIpaBtn;
-    NSURL *selectedIpaURL;
 }
 
 + (instancetype)sharedInstance {
@@ -168,8 +163,8 @@
     UIPanGestureRecognizer *menuPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleMenuPan:)];
     [menuView addGestureRecognizer:menuPan];
 
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 10, 220, 25)];
-    titleLabel.text = @"DELTA IPA LOADER (MOD)";
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 10, 200, 25)];
+    titleLabel.text = @"DELTA TIKTOK (MOD)";
     titleLabel.textColor = [UIColor colorWithRed:0.85 green:0.45 blue:1.0 alpha:1.0];
     titleLabel.font = [UIFont boldSystemFontOfSize:14];
     [menuView addSubview:titleLabel];
@@ -182,7 +177,7 @@
     [closeBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
     [menuView addSubview:closeBtn];
 
-    NSArray *itemArray = @[@"Trình Duyệt Chrome", @"Quản Lý IPA"];
+    NSArray *itemArray = @[@"Trình Duyệt Chrome", @"TikTok"];
     segmentedControl = [[UISegmentedControl alloc] initWithItems:itemArray];
     segmentedControl.frame = CGRectMake(15, 40, w - 30, 32);
     segmentedControl.selectedSegmentIndex = 1;
@@ -207,47 +202,21 @@
     [tab1View addSubview:webView];
     [menuView addSubview:tab1View];
 
-    // Tab 2: IPA Loader & Runner Interface
+    // Tab 2: TikTok Viewer
     tab2View = [[UIView alloc] initWithFrame:contentRect];
     tab2View.hidden = NO;
 
-    // Hiển thị tên file IPA được chọn
-    fileNameLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 20, contentW - 20, 40)];
-    fileNameLabel.text = @"Chưa chọn file IPA nào";
-    fileNameLabel.textColor = [UIColor colorWithRed:0.2 green:1.0 blue:0.4 alpha:1.0];
-    fileNameLabel.font = [UIFont fontWithName:@"Courier-Bold" size:13] ?: [UIFont boldSystemFontOfSize:13];
-    fileNameLabel.numberOfLines = 2;
-    fileNameLabel.textAlignment = NSTextAlignmentCenter;
-    fileNameLabel.backgroundColor = [UIColor colorWithRed:0.04 green:0.01 blue:0.07 alpha:1.0];
-    fileNameLabel.layer.borderColor = [UIColor systemPurpleColor].CGColor;
-    fileNameLabel.layer.borderWidth = 1.0;
-    fileNameLabel.layer.cornerRadius = 8.0;
-    fileNameLabel.clipsToBounds = YES;
-    [tab2View addSubview:fileNameLabel];
+    WKWebViewConfiguration *tkConfig = [[WKWebViewConfiguration alloc] init];
+    tkConfig.allowsInlineMediaPlayback = YES;
+    tkConfig.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
 
-    // Nút Chọn File IPA
-    pickIpaBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    pickIpaBtn.frame = CGRectMake(10, 80, contentW - 20, 44);
-    pickIpaBtn.backgroundColor = [UIColor colorWithRed:0.35 green:0.08 blue:0.6 alpha:1.0];
-    [pickIpaBtn setTitle:@"📂 Chọn File IPA từ thiết bị" forState:UIControlStateNormal];
-    [pickIpaBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    pickIpaBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
-    pickIpaBtn.layer.cornerRadius = 8;
-    [pickIpaBtn addTarget:self action:@selector(selectIPAFile) forControlEvents:UIControlEventTouchUpInside];
-    [tab2View addSubview:pickIpaBtn];
-
-    // Nút Chạy/Xử lý App IPA
-    runIpaBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    runIpaBtn.frame = CGRectMake(10, 135, contentW - 20, 44);
-    runIpaBtn.backgroundColor = [UIColor colorWithRed:0.1 green:0.4 blue:0.2 alpha:1.0];
-    [runIpaBtn setTitle:@"🚀 Chạy / Cài Đặt Ứng Dụng IPA" forState:UIControlStateNormal];
-    [runIpaBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    runIpaBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
-    runIpaBtn.layer.cornerRadius = 8;
-    [runIpaBtn addTarget:self action:@selector(runOrProcessIPA) forControlEvents:UIControlEventTouchUpInside];
-    [tab2View addSubview:runIpaBtn];
-
+    tikTokWebView = [[WKWebView alloc] initWithFrame:tab2View.bounds configuration:tkConfig];
+    tikTokWebView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    NSURLRequest *tkRequest = [NSURLRequest requestWithURL:[NSURL URLWithString:@"https://www.tiktok.com"]];
+    [tikTokWebView loadRequest:tkRequest];
+    [tab2View addSubview:tikTokWebView];
     [menuView addSubview:tab2View];
+
     [keyWindow addSubview:menuView];
 
     menuView.hidden = NO;
@@ -265,53 +234,6 @@
         tab1View.hidden = YES;
         tab2View.hidden = NO;
     }
-}
-
-- (void)selectIPAFile {
-    UIDocumentPickerViewController *documentPicker = [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"public.item", @"public.data"] inMode:UIDocumentPickerModeImport];
-    documentPicker.delegate = self;
-    
-    UIWindow *keyWindow = [self getCurrentKeyWindow];
-    [keyWindow.rootViewController presentViewController:documentPicker animated:YES completion:nil];
-}
-
-- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
-    if (urls.count > 0) {
-        selectedIpaURL = urls.firstObject;
-        [selectedIpaURL startAccessingSecurityScopedResource];
-        
-        NSString *fileName = [selectedIpaURL lastPathComponent];
-        fileNameLabel.text = [NSString stringWithFormat:@"Đã chọn: %@", fileName];
-        
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Thành công" 
-                                                                        message:[NSString stringWithFormat:@"Đã nạp file: %@", fileName] 
-                                                                 preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-        UIWindow *keyWindow = [self getCurrentKeyWindow];
-        [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-    }
-}
-
-- (void)runOrProcessIPA {
-    if (!selectedIpaURL) {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Thông báo" 
-                                                                        message:@"Vui lòng chọn một file IPA trước khi chạy!" 
-                                                                 preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-        UIWindow *keyWindow = [self getCurrentKeyWindow];
-        [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-        return;
-    }
-    
-    // Xử lý nạp/chạy file IPA trong giới hạn sandboxing của iOS
-    NSString *msg = [NSString stringWithFormat:@"Đang xử lý gói IPA: %@\n(Lưu ý: iOS không cho phép ứng dụng chạy trực tiếp file IPA độc lập bên trong tiến trình game khác do chính sách Sandbox).", [selectedIpaURL lastPathComponent]];
-    
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"IPA Loader" 
-                                                                    message:msg 
-                                                             preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-    UIWindow *keyWindow = [self getCurrentKeyWindow];
-    [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)orientationDidChange {
@@ -335,10 +257,6 @@
 
     tab1View.frame = contentRect;
     tab2View.frame = contentRect;
-    
-    fileNameLabel.frame = CGRectMake(10, 20, contentW - 20, 40);
-    pickIpaBtn.frame = CGRectMake(10, 80, contentW - 20, 44);
-    runIpaBtn.frame = CGRectMake(10, 135, contentW - 20, 44);
 
     closeBtn.frame = CGRectMake(w - 38, 8, 28, 28);
     segmentedControl.frame = CGRectMake(15, 40, w - 30, 32);
