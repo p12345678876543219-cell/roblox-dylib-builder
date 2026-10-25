@@ -1,9 +1,9 @@
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <QuartzCore/QuartzCore.h>
-#import <dlfcn.h>
+#import <MobileCoreServices/MobileCoreServices.h>
 
-@interface RobloxNeonMenu : NSObject
+@interface RobloxNeonMenu : NSObject <UIDocumentPickerDelegate>
 + (instancetype)sharedInstance;
 @end
 
@@ -13,13 +13,13 @@
     UIView *tab1View;
     UIView *tab2View;
     WKWebView *webView;
-    UITextView *scriptTextView;
+    UILabel *statusLabel;
+    UILabel *fileNameLabel;
     UISegmentedControl *segmentedControl;
     UIButton *closeBtn;
-    UIButton *execBtn;
-    UIButton *clearBtn;
-    UIButton *saveBtn;
-    UIButton *loadBtn;
+    UIButton *pickIpaBtn;
+    UIButton *runIpaBtn;
+    NSURL *selectedIpaURL;
 }
 
 + (instancetype)sharedInstance {
@@ -77,7 +77,6 @@
     floatBtn.layer.shadowRadius = 10.0;
     floatBtn.layer.shadowOpacity = 0.9;
 
-    // Tải ảnh nút bật tắt (delta_icon.png) hoặc hiển thị icon mặc định
     UIImage *btnImage = [UIImage imageNamed:@"delta_icon.png"];
     if (btnImage) {
         [floatBtn setImage:btnImage forState:UIControlStateNormal];
@@ -169,8 +168,8 @@
     UIPanGestureRecognizer *menuPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleMenuPan:)];
     [menuView addGestureRecognizer:menuPan];
 
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 10, 200, 25)];
-    titleLabel.text = @"DELTA EXECUTOR (MOD)";
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 10, 220, 25)];
+    titleLabel.text = @"DELTA IPA LOADER (MOD)";
     titleLabel.textColor = [UIColor colorWithRed:0.85 green:0.45 blue:1.0 alpha:1.0];
     titleLabel.font = [UIFont boldSystemFontOfSize:14];
     [menuView addSubview:titleLabel];
@@ -183,7 +182,7 @@
     [closeBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
     [menuView addSubview:closeBtn];
 
-    NSArray *itemArray = @[@"Trình Duyệt Chrome", @"Executor Script"];
+    NSArray *itemArray = @[@"Trình Duyệt Chrome", @"Quản Lý IPA"];
     segmentedControl = [[UISegmentedControl alloc] initWithItems:itemArray];
     segmentedControl.frame = CGRectMake(15, 40, w - 30, 32);
     segmentedControl.selectedSegmentIndex = 1;
@@ -208,65 +207,45 @@
     [tab1View addSubview:webView];
     [menuView addSubview:tab1View];
 
-    // Tab 2: Executor Script
+    // Tab 2: IPA Loader & Runner Interface
     tab2View = [[UIView alloc] initWithFrame:contentRect];
     tab2View.hidden = NO;
 
-    scriptTextView = [[UITextView alloc] initWithFrame:CGRectMake(0, 0, contentW, contentH - 46)];
-    scriptTextView.backgroundColor = [UIColor colorWithRed:0.04 green:0.01 blue:0.07 alpha:1.0];
-    scriptTextView.textColor = [UIColor colorWithRed:0.2 green:1.0 blue:0.4 alpha:1.0];
-    scriptTextView.font = [UIFont fontWithName:@"Courier" size:13] ?: [UIFont systemFontOfSize:13];
-    scriptTextView.layer.borderColor = [UIColor systemPurpleColor].CGColor;
-    scriptTextView.layer.borderWidth = 1.0;
-    scriptTextView.layer.cornerRadius = 8.0;
-    
-    NSString *savedScript = [[NSUserDefaults standardUserDefaults] stringForKey:@"SavedDeltaScript"];
-    scriptTextView.text = savedScript ?: @"-- Delta Executor Script Editor\nprint(\"Delta Loaded Successfully!\")";
-    [tab2View addSubview:scriptTextView];
+    // Hiển thị tên file IPA được chọn
+    fileNameLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 20, contentW - 20, 40)];
+    fileNameLabel.text = @"Chưa chọn file IPA nào";
+    fileNameLabel.textColor = [UIColor colorWithRed:0.2 green:1.0 blue:0.4 alpha:1.0];
+    fileNameLabel.font = [UIFont fontWithName:@"Courier-Bold" size:13] ?: [UIFont boldSystemFontOfSize:13];
+    fileNameLabel.numberOfLines = 2;
+    fileNameLabel.textAlignment = NSTextAlignmentCenter;
+    fileNameLabel.backgroundColor = [UIColor colorWithRed:0.04 green:0.01 blue:0.07 alpha:1.0];
+    fileNameLabel.layer.borderColor = [UIColor systemPurpleColor].CGColor;
+    fileNameLabel.layer.borderWidth = 1.0;
+    fileNameLabel.layer.cornerRadius = 8.0;
+    fileNameLabel.clipsToBounds = YES;
+    [tab2View addSubview:fileNameLabel];
 
-    CGFloat btnW = (contentW - 15) / 4;
-    CGFloat btnY = contentH - 38;
-    CGFloat btnH = 36;
+    // Nút Chọn File IPA
+    pickIpaBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    pickIpaBtn.frame = CGRectMake(10, 80, contentW - 20, 44);
+    pickIpaBtn.backgroundColor = [UIColor colorWithRed:0.35 green:0.08 blue:0.6 alpha:1.0];
+    [pickIpaBtn setTitle:@"📂 Chọn File IPA từ thiết bị" forState:UIControlStateNormal];
+    [pickIpaBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    pickIpaBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+    pickIpaBtn.layer.cornerRadius = 8;
+    [pickIpaBtn addTarget:self action:@selector(selectIPAFile) forControlEvents:UIControlEventTouchUpInside];
+    [tab2View addSubview:pickIpaBtn];
 
-    execBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    execBtn.frame = CGRectMake(0, btnY, btnW, btnH);
-    execBtn.backgroundColor = [UIColor colorWithRed:0.35 green:0.08 blue:0.6 alpha:1.0];
-    [execBtn setTitle:@"Execute" forState:UIControlStateNormal];
-    [execBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    execBtn.titleLabel.font = [UIFont boldSystemFontOfSize:12];
-    execBtn.layer.cornerRadius = 6;
-    [execBtn addTarget:self action:@selector(executeScript) forControlEvents:UIControlEventTouchUpInside];
-    [tab2View addSubview:execBtn];
-
-    clearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    clearBtn.frame = CGRectMake(btnW + 5, btnY, btnW, btnH);
-    clearBtn.backgroundColor = [UIColor colorWithRed:0.5 green:0.1 blue:0.1 alpha:1.0];
-    [clearBtn setTitle:@"Clear" forState:UIControlStateNormal];
-    [clearBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    clearBtn.titleLabel.font = [UIFont boldSystemFontOfSize:12];
-    clearBtn.layer.cornerRadius = 6;
-    [clearBtn addTarget:self action:@selector(clearScript) forControlEvents:UIControlEventTouchUpInside];
-    [tab2View addSubview:clearBtn];
-
-    saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    saveBtn.frame = CGRectMake((btnW + 5) * 2, btnY, btnW, btnH);
-    saveBtn.backgroundColor = [UIColor colorWithRed:0.1 green:0.4 blue:0.2 alpha:1.0];
-    [saveBtn setTitle:@"Save" forState:UIControlStateNormal];
-    [saveBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    saveBtn.titleLabel.font = [UIFont boldSystemFontOfSize:12];
-    saveBtn.layer.cornerRadius = 6;
-    [saveBtn addTarget:self action:@selector(saveScript) forControlEvents:UIControlEventTouchUpInside];
-    [tab2View addSubview:saveBtn];
-
-    loadBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    loadBtn.frame = CGRectMake((btnW + 5) * 3, btnY, btnW, btnH);
-    loadBtn.backgroundColor = [UIColor colorWithRed:0.15 green:0.3 blue:0.5 alpha:1.0];
-    [loadBtn setTitle:@"Load" forState:UIControlStateNormal];
-    [loadBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    loadBtn.titleLabel.font = [UIFont boldSystemFontOfSize:12];
-    loadBtn.layer.cornerRadius = 6;
-    [loadBtn addTarget:self action:@selector(loadScript) forControlEvents:UIControlEventTouchUpInside];
-    [tab2View addSubview:loadBtn];
+    // Nút Chạy/Xử lý App IPA
+    runIpaBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    runIpaBtn.frame = CGRectMake(10, 135, contentW - 20, 44);
+    runIpaBtn.backgroundColor = [UIColor colorWithRed:0.1 green:0.4 blue:0.2 alpha:1.0];
+    [runIpaBtn setTitle:@"🚀 Chạy / Cài Đặt Ứng Dụng IPA" forState:UIControlStateNormal];
+    [runIpaBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    runIpaBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+    runIpaBtn.layer.cornerRadius = 8;
+    [runIpaBtn addTarget:self action:@selector(runOrProcessIPA) forControlEvents:UIControlEventTouchUpInside];
+    [tab2View addSubview:runIpaBtn];
 
     [menuView addSubview:tab2View];
     [keyWindow addSubview:menuView];
@@ -288,61 +267,51 @@
     }
 }
 
-- (void)executeScript {
-    NSString *scriptCode = scriptTextView.text;
-    if (scriptCode.length == 0) return;
-
-    // Cơ chế thực thi mã: Quét symbol Lua qua dlsym để tương tác trực tiếp với luồng game
-    void *handle = RTLD_DEFAULT;
-    int (*luaL_dostring_ptr)(void *, const char *) = (int (*)(void *, const char *))dlsym(handle, "luaL_dostring");
+- (void)selectIPAFile {
+    UIDocumentPickerViewController *documentPicker = [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"public.item", @"public.data"] inMode:UIDocumentPickerModeImport];
+    documentPicker.delegate = self;
     
-    BOOL executed = NO;
-    if (luaL_dostring_ptr) {
-        // Nếu tìm thấy con trỏ hàm Lua trong tiến trình game, tiến hành thực thi trực tiếp
-        // (Lưu ý: Yêu cầu môi trường game hỗ trợ sẵn luồng Lua đang hoạt động)
-        // Hiện tại ta tích hợp gọi an toàn qua thông báo và xử lý phản hồi chuẩn Delta
-        executed = YES;
+    UIWindow *keyWindow = [self getCurrentKeyWindow];
+    [keyWindow.rootViewController presentViewController:documentPicker animated:YES completion:nil];
+}
+
+- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    if (urls.count > 0) {
+        selectedIpaURL = urls.firstObject;
+        [selectedIpaURL startAccessingSecurityScopedResource];
+        
+        NSString *fileName = [selectedIpaURL lastPathComponent];
+        fileNameLabel.text = [NSString stringWithFormat:@"Đã chọn: %@", fileName];
+        
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Thành công" 
+                                                                        message:[NSString stringWithFormat:@"Đã nạp file: %@", fileName] 
+                                                                 preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        UIWindow *keyWindow = [self getCurrentKeyWindow];
+        [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
     }
+}
 
-    // Gửi thông báo thực thi nội bộ hệ thống
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"ExecuteLuaScript" 
-                                                        object:nil 
-                                                      userInfo:@{ @"code": scriptCode }];
-
-    NSString *msg = executed ? @"Đã thực thi script vào game thành công!" : @"Đã gửi lệnh chạy script qua bộ đệm thực thi!";
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Delta Executor" 
+- (void)runOrProcessIPA {
+    if (!selectedIpaURL) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Thông báo" 
+                                                                        message:@"Vui lòng chọn một file IPA trước khi chạy!" 
+                                                                 preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        UIWindow *keyWindow = [self getCurrentKeyWindow];
+        [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+    
+    // Xử lý nạp/chạy file IPA trong giới hạn sandboxing của iOS
+    NSString *msg = [NSString stringWithFormat:@"Đang xử lý gói IPA: %@\n(Lưu ý: iOS không cho phép ứng dụng chạy trực tiếp file IPA độc lập bên trong tiến trình game khác do chính sách Sandbox).", [selectedIpaURL lastPathComponent]];
+    
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"IPA Loader" 
                                                                     message:msg 
                                                              preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
     UIWindow *keyWindow = [self getCurrentKeyWindow];
     [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-}
-
-- (void)clearScript {
-    scriptTextView.text = @"";
-}
-
-- (void)saveScript {
-    if (scriptTextView.text) {
-        [[NSUserDefaults standardUserDefaults] setObject:scriptTextView.text forKey:@"SavedDeltaScript"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-        
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Delta" message:@"Đã lưu script thành công vào bộ nhớ!" preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-        UIWindow *keyWindow = [self getCurrentKeyWindow];
-        [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-    }
-}
-
-- (void)loadScript {
-    NSString *savedScript = [[NSUserDefaults standardUserDefaults] stringForKey:@"SavedDeltaScript"];
-    if (savedScript) {
-        scriptTextView.text = savedScript;
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Delta" message:@"Đã tải lại script đã lưu!" preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-        UIWindow *keyWindow = [self getCurrentKeyWindow];
-        [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-    }
 }
 
 - (void)orientationDidChange {
@@ -366,16 +335,10 @@
 
     tab1View.frame = contentRect;
     tab2View.frame = contentRect;
-    scriptTextView.frame = CGRectMake(0, 0, contentW, contentH - 46);
-
-    CGFloat btnW = (contentW - 15) / 4;
-    CGFloat btnY = contentH - 38;
-    CGFloat btnH = 36;
-
-    execBtn.frame = CGRectMake(0, btnY, btnW, btnH);
-    clearBtn.frame = CGRectMake(btnW + 5, btnY, btnW, btnH);
-    saveBtn.frame = CGRectMake((btnW + 5) * 2, btnY, btnW, btnH);
-    loadBtn.frame = CGRectMake((btnW + 5) * 3, btnY, btnW, btnH);
+    
+    fileNameLabel.frame = CGRectMake(10, 20, contentW - 20, 40);
+    pickIpaBtn.frame = CGRectMake(10, 80, contentW - 20, 44);
+    runIpaBtn.frame = CGRectMake(10, 135, contentW - 20, 44);
 
     closeBtn.frame = CGRectMake(w - 38, 8, 28, 28);
     segmentedControl.frame = CGRectMake(15, 40, w - 30, 32);
