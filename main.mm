@@ -119,7 +119,8 @@
 
     // Close Button
     UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    closeBtn.frame = CGRectMake(w - 40, 12, 28, 28];
+        closeBtn.frame = CGRectMake(w - 40, 12, 28, 28);
+
     [closeBtn setTitle:@"✕" forState:UIControlStateNormal];
     [closeBtn setTitleColor:[UIColor redColor] forState:UIControlStateNormal];
     closeBtn.titleLabel.font = [UIFont boldSystemFontOfSize:16];
