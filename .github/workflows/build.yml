@@ -15,7 +15,8 @@ jobs:
 
     - name: Compile Dylib for iOS (arm64)
       run: |
-        xcrun -sdk iphoneos clang -arch arm64 -fobjc-arc -dynamiclib main.mm -o libRobloxNeon.dylib -framework UIKit -framework WebKit -framework Foundation -framework QuartzCore
+        xcrun -sdk iphoneos clang -arch arm64 -fobjc-arc -dynamiclib main.mm -o libRobloxNeon.dylib -framework UIKit -framework WebKit -framework Foundation -framework QuartzCore -framework CoreGraphics -lc++
+
         echo "Compilation completed successfully!"
 
     - name: Upload compiled Dylib
