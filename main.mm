@@ -35,8 +35,30 @@
     return self;
 }
 
+- (UIWindow *)getCurrentKeyWindow {
+    UIWindow *foundWindow = nil;
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    foundWindow = [UIApplication sharedApplication].keyWindow;
+    #pragma clang diagnostic pop
+    
+    if (!foundWindow) {
+        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                for (UIWindow *window in scene.windows) {
+                    if (window.isKeyWindow) {
+                        foundWindow = window;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    return foundWindow;
+}
+
 - (void)setupFloatingButton {
-    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+    UIWindow *keyWindow = [self getCurrentKeyWindow];
     if (!keyWindow) return;
 
     floatBtn = [UIButton buttonWithType:UIButtonTypeCustom];
@@ -87,7 +109,7 @@
 }
 
 - (void)createMenuUI {
-    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+    UIWindow *keyWindow = [self getCurrentKeyWindow];
     if (!keyWindow) return;
 
     CGSize screenSize = keyWindow.bounds.size;
@@ -151,13 +173,13 @@
     [tab1View addSubview:webView];
     [menuView addSubview:tab1View];
 
-    // Tab 2: YouTube Player (Cho phép chạy âm thanh ngầm khi ẩn/đóng Menu)
+    // Tab 2: YouTube Player
     tab2View = [[UIView alloc] initWithFrame:contentRect];
     tab2View.hidden = YES;
 
     WKWebViewConfiguration *ytConfig = [[WKWebViewConfiguration alloc] init];
     ytConfig.allowsInlineMediaPlayback = YES;
-    ytConfig.mediaPlaybackAllowsUserAction = NO; // Cho phép video tự phát âm thanh
+    ytConfig.mediaPlaybackAllowsUserAction = NO;
 
     youtubeWebView = [[WKWebView alloc] initWithFrame:tab2View.bounds configuration:ytConfig];
     youtubeWebView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -186,7 +208,7 @@
 
 - (void)orientationDidChange {
     if (!menuView || !menuView.superview) return;
-    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+    UIWindow *keyWindow = [self getCurrentKeyWindow];
     if (!keyWindow) return;
 
     CGSize screenSize = keyWindow.bounds.size;
