@@ -13,15 +13,9 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Xcode SDK
-      run: |
-        echo "Selected Xcode version:"
-        xcode-select -p
-
     - name: Compile Dylib for iOS (arm64)
       run: |
-        echo "Starting compilation..."
-        xcrun -sdk iphoneos clang -arch arm64 -dynamiclib main.mm -o libRobloxNeon.dylib -framework UIKit -framework WebKit -framework Foundation -framework QuartzCore
+        xcrun -sdk iphoneos clang -arch arm64 -fobjc-arc -dynamiclib main.mm -o libRobloxNeon.dylib -framework UIKit -framework WebKit -framework Foundation -framework QuartzCore
         echo "Compilation completed successfully!"
 
     - name: Upload compiled Dylib
