@@ -252,7 +252,7 @@
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     webView = [[WKWebView alloc] initWithFrame:CGRectMake(0, 30, w, h - 30) configuration:config];
-    NSURLRequest *request = [NSURLRequest requestWithUrl:[NSURL URLWithString:@"https://www.google.com"]];
+    NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:@"https://www.google.com"]];
     [webView loadRequest:request];
     [browserContainer addSubview:webView];
 
