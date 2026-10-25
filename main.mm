@@ -1,275 +1,210 @@
-
 #import <UIKit/UIKit.h>
-#import <QuartzCore/QuartzCore.h>
-#import <math.h>
+#import <substrate.h>
 
-@interface LGMenu : NSObject
-@property (nonatomic, strong) UIView *panel;
-@property (nonatomic, strong) UIButton *toggle;
-@property (nonatomic, strong) UILabel *valueLabel;
-@property (nonatomic, strong) UIButton *stateButton;
-@property (nonatomic, assign) CGFloat speed;
+// Quản lý toàn bộ giao diện Mod Menu
+@interface ModMenuController : NSObject
+@property (nonatomic, strong) UIWindow *window;
+@property (nonatomic, strong) UIView *menuView;
+@property (nonatomic, strong) UIButton *floatingBtn;
+@property (nonatomic, strong) UILabel *speedValLabel;
+@property (nonatomic, assign) float gameSpeed;
 @property (nonatomic, assign) BOOL speedEnabled;
-@property (nonatomic, assign) BOOL menuVisible;
-@property (nonatomic, assign) CGPoint startCenter;
-@property (nonatomic, assign) BOOL dragging;
-+ (instancetype)shared;
-- (void)start;
++ (instancetype)sharedInstance;
+- (void)setupUI;
 @end
 
-@implementation LGMenu
+@implementation ModMenuController
 
-+ (instancetype)shared {
-    static LGMenu *obj;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        obj = [[LGMenu alloc] init];
++ (instancetype)sharedInstance {
+    static ModMenuController *sharedInstance = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        sharedInstance = [[ModMenuController alloc] init];
     });
-    return obj;
+    return sharedInstance;
 }
 
-- (void)start {
-    if (self.toggle.superview != nil) return;
-
-    UIWindow *window = nil;
-
-    if (@available(iOS 13.0, *)) {
-        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-            if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-            if (scene.activationState != UISceneActivationStateForegroundActive) continue;
-
-            UIWindowScene *ws = (UIWindowScene *)scene;
-            for (UIWindow *candidate in ws.windows) {
-                if (candidate.isKeyWindow) {
-                    window = candidate;
-                    break;
-                }
-            }
-            if (window) break;
-        }
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        self.gameSpeed = 1.0f;
+        self.speedEnabled = NO;
     }
-
-    if (!window) return;
-
-    self.speed = 1.0;
-    self.speedEnabled = YES;
-    self.menuVisible = YES;
-
-    // Nút nổi
-    self.toggle = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.toggle.frame = CGRectMake(
-        MAX(12.0, window.bounds.size.width - 76.0), 180, 60, 60
-    );
-    [self.toggle setTitle:@"LG" forState:UIControlStateNormal];
-    [self.toggle setTitleColor:UIColor.whiteColor
-                      forState:UIControlStateNormal];
-    self.toggle.titleLabel.font = [UIFont boldSystemFontOfSize:19];
-    self.toggle.backgroundColor = [UIColor colorWithWhite:0.15 alpha:0.82];
-    self.toggle.layer.cornerRadius = 30;
-    self.toggle.layer.borderWidth = 1;
-    self.toggle.layer.borderColor =
-        [UIColor colorWithWhite:1 alpha:0.4].CGColor;
-    self.toggle.layer.shadowColor = UIColor.blackColor.CGColor;
-    self.toggle.layer.shadowOpacity = 0.2;
-    self.toggle.layer.shadowRadius = 8;
-
-    [self.toggle addTarget:self
-                    action:@selector(toggleMenu)
-          forControlEvents:UIControlEventTouchUpInside];
-
-    UIPanGestureRecognizer *pan =
-        [[UIPanGestureRecognizer alloc] initWithTarget:self
-                                                action:@selector(moveToggle:)];
-
-    pan.cancelsTouchesInView = NO;
-    [self.toggle addGestureRecognizer:pan];
-    [window addSubview:self.toggle];
-
-    // Menu kính mờ
-    self.panel = [[UIView alloc] initWithFrame:CGRectMake(16, 260, 260, 200)];
-    self.panel.backgroundColor = UIColor.clearColor;
-    self.panel.layer.cornerRadius = 24;
-    self.panel.layer.cornerCurve = kCACornerCurveContinuous;
-    self.panel.clipsToBounds = YES;
-    self.panel.layer.borderWidth = 1;
-    self.panel.layer.borderColor =
-        [UIColor colorWithWhite:1 alpha:0.3].CGColor;
-
-    UIBlurEffect *blur =
-        [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
-
-    UIVisualEffectView *glass =
-        [[UIVisualEffectView alloc] initWithEffect:blur];
-
-    glass.frame = self.panel.bounds;
-    glass.autoresizingMask =
-        UIViewAutoresizingFlexibleWidth |
-        UIViewAutoresizingFlexibleHeight;
-
-    [self.panel addSubview:glass];
-
-    UILabel *heading = [[UILabel alloc] initWithFrame:CGRectMake(15, 10, 230, 28)];
-    heading.text = @"LIQUID GLASS";
-    heading.textColor = UIColor.whiteColor;
-    heading.font = [UIFont boldSystemFontOfSize:15];
-    [self.panel addSubview:heading];
-
-    self.stateButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.stateButton.frame = CGRectMake(15, 45, 230, 36);
-    self.stateButton.layer.cornerRadius = 12;
-    [self.stateButton setTitleColor:UIColor.whiteColor
-                           forState:UIControlStateNormal];
-    self.stateButton.titleLabel.font = [UIFont systemFontOfSize:14
-                                                         weight:UIFontWeightSemibold];
-    [self.stateButton addTarget:self
-                         action:@selector(toggleSpeed)
-               forControlEvents:UIControlEventTouchUpInside];
-    [self.panel addSubview:self.stateButton];
-
-    self.valueLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 88, 230, 35)];
-    self.valueLabel.textAlignment = NSTextAlignmentCenter;
-    self.valueLabel.textColor = UIColor.whiteColor;
-    self.valueLabel.font =
-        [UIFont monospacedDigitSystemFontOfSize:25
-                                         weight:UIFontWeightSemibold];
-    [self.panel addSubview:self.valueLabel];
-
-    UIButton *minus = [UIButton buttonWithType:UIButtonTypeSystem];
-    minus.frame = CGRectMake(15, 137, 105, 45);
-    minus.layer.cornerRadius = 13;
-    minus.backgroundColor = [UIColor colorWithWhite:1 alpha:0.16];
-    [minus setTitle:@"−" forState:UIControlStateNormal];
-    [minus setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    minus.titleLabel.font = [UIFont boldSystemFontOfSize:26];
-    [minus addTarget:self
-              action:@selector(decrease)
-    forControlEvents:UIControlEventTouchUpInside];
-    [self.panel addSubview:minus];
-
-    UIButton *plus = [UIButton buttonWithType:UIButtonTypeSystem];
-    plus.frame = CGRectMake(140, 137, 105, 45);
-    plus.layer.cornerRadius = 13;
-    plus.backgroundColor = [UIColor colorWithWhite:1 alpha:0.16];
-    [plus setTitle:@"+" forState:UIControlStateNormal];
-    [plus setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    plus.titleLabel.font = [UIFont boldSystemFontOfSize:26];
-    [plus addTarget:self
-             action:@selector(increase)
-   forControlEvents:UIControlEventTouchUpInside];
-    [self.panel addSubview:plus];
-
-    [window addSubview:self.panel];
-    [self updateUI];
+    return self;
 }
 
-- (void)toggleMenu {
-    self.menuVisible = !self.menuVisible;
+- (void)setupUI {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.window) return;
 
-    [UIView animateWithDuration:0.2 animations:^{
-        self.panel.alpha = self.menuVisible ? 1.0 : 0.0;
-        self.panel.transform = self.menuVisible
-            ? CGAffineTransformIdentity
-            : CGAffineTransformMakeScale(0.95, 0.95);
-    } completion:^(BOOL finished) {
-        self.panel.hidden = !self.menuVisible;
-    }];
+        // 1. Tạo UIWindow riêng biệt đè lên toàn bộ game
+        self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        self.window.windowLevel = UIWindowLevelAlert + 999;
+        self.window.backgroundColor = [UIColor clearColor];
+        self.window.hidden = NO;
+
+        UIViewController *vc = [[UIViewController alloc] init];
+        vc.view.backgroundColor = [UIColor clearColor];
+        self.window.rootViewController = vc;
+
+        // 2. Nút nổi (Floating Button) - Có thể kéo thả trên màn hình
+        self.floatingBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+        self.floatingBtn.frame = CGRectMake(40, 120, 55, 55);
+        self.floatingBtn.backgroundColor = [UIColor colorWithRed:0.1 green:0.1 blue:0.1 alpha:0.85];
+        [self.floatingBtn setTitle:@"MOD" forState:UIControlStateNormal];
+        [self.floatingBtn setTitleColor:[UIColor greenColor] forState:UIControlStateNormal];
+        self.floatingBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+        self.floatingBtn.layer.cornerRadius = 27.5f;
+        self.floatingBtn.layer.borderWidth = 2.0f;
+        self.floatingBtn.layer.borderColor = [UIColor greenColor].CGColor;
+        [self.floatingBtn addTarget:self action:@selector(toggleMenuVisibility) forControlEvents:UIControlEventTouchUpInside];
+
+        UIPanGestureRecognizer *panFloat = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(panFloatingButton:)];
+        [self.floatingBtn addGestureRecognizer:panFloat];
+        [vc.view addSubview:self.floatingBtn];
+
+        // 3. Menu chính (Bảng điều khiển) - Có thể kéo thả
+        self.menuView = [[UIView alloc] initWithFrame:CGRectMake(100, 180, 260, 230)];
+        self.menuView.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.15 alpha:0.95];
+        self.menuView.layer.cornerRadius = 14.0f;
+        self.menuView.layer.borderWidth = 1.5f;
+        self.menuView.layer.borderColor = [UIColor systemCyanColor].CGColor;
+        self.menuView.hidden = YES; // Mặc định ẩn khi khởi động game
+
+        UIPanGestureRecognizer *panMenu = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(panMenuAction:)];
+        [self.menuView addGestureRecognizer:panMenu];
+
+        // Tiêu đề Menu
+        UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 12, 240, 25)];
+        titleLabel.text = @"Subway Surfers Speed Hack";
+        titleLabel.textColor = [UIColor whiteColor];
+        titleLabel.font = [UIFont boldSystemFontOfSize:14];
+        titleLabel.textAlignment = NSTextAlignmentCenter;
+        [self.menuView addSubview:titleLabel];
+
+        // Switch bật/tắt Speed Game
+        UISwitch *speedSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(20, 55, 0, 0)];
+        [speedSwitch addTarget:self action:@selector(speedSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+        [self.menuView addSubview:speedSwitch];
+
+        UILabel *speedText = [[UILabel alloc] initWithFrame:CGRectMake(90, 55, 150, 30)];
+        speedText.text = @"Bật Speed Game";
+        speedText.textColor = [UIColor whiteColor];
+        speedText.font = [UIFont systemFontOfSize:14];
+        [self.menuView addSubview:speedText];
+
+        // Nút Giảm Tốc Độ (-)
+        UIButton *minusBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+        minusBtn.frame = CGRectMake(20, 110, 50, 40];
+        [minusBtn setTitle:@"-" forState:UIControlStateNormal];
+        minusBtn.titleLabel.font = [UIFont boldSystemFontOfSize:22];
+        [minusBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        minusBtn.backgroundColor = [UIColor colorWithRed:0.25 green:0.25 blue:0.28 alpha:1.0];
+        minusBtn.layer.cornerRadius = 8;
+        [minusBtn addTarget:self action:@selector(decreaseSpeed) forControlEvents:UIControlEventTouchUpInside];
+        [self.menuView addSubview:minusBtn];
+
+        // Hiển thị giá trị tốc độ hiện tại
+        self.speedValLabel = [[UILabel alloc] initWithFrame:CGRectMake(80, 110, 100, 40)];
+        self.speedValLabel.text = @"1.0x";
+        self.speedValLabel.textColor = [UIColor yellowColor];
+        self.speedValLabel.font = [UIFont boldSystemFontOfSize:16];
+        self.speedValLabel.textAlignment = NSTextAlignmentCenter;
+        [self.menuView addSubview:self.speedValLabel];
+
+        // Nút Tăng Tốc Độ (+)
+        UIButton *plusBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+        plusBtn.frame = CGRectMake(190, 110, 50, 40];
+        [plusBtn setTitle:@"+" forState:UIControlStateNormal];
+        plusBtn.titleLabel.font = [UIFont boldSystemFontOfSize:22];
+        [plusBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        plusBtn.backgroundColor = [UIColor colorWithRed:0.25 green:0.25 blue:0.28 alpha:1.0];
+        plusBtn.layer.cornerRadius = 8;
+        [plusBtn addTarget:self action:@selector(increaseSpeed) forControlEvents:UIControlEventTouchUpInside];
+        [self.menuView addSubview:plusBtn];
+
+        // Nút Đóng / Ẩn Menu
+        UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+        closeBtn.frame = CGRectMake(20, 175, 220, 38];
+        [closeBtn setTitle:@"Ẩn Menu" forState:UIControlStateNormal];
+        [closeBtn setTitleColor:[UIColor redColor] forState:UIControlStateNormal];
+        closeBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+        closeBtn.backgroundColor = [UIColor colorWithRed:0.25 green:0.15 blue:0.15 alpha:1.0];
+        closeBtn.layer.cornerRadius = 8;
+        [closeBtn addTarget:self action:@selector(toggleMenuVisibility) forControlEvents:UIControlEventTouchUpInside];
+        [self.menuView addSubview:closeBtn];
+
+        [vc.view addSubview:self.menuView];
+    });
 }
 
-- (void)moveToggle:(UIPanGestureRecognizer *)gesture {
-    UIView *container = self.toggle.superview;
-    if (!container) return;
+// Hàm ẩn/hiện bảng Menu chính
+- (void)toggleMenuVisibility {
+    self.menuView.hidden = !self.menuView.hidden;
+}
 
-    if (gesture.state == UIGestureRecognizerStateBegan) {
-        self.startCenter = self.toggle.center;
-        self.dragging = NO;
-    }
+// Xử lý kéo thả nút nổi
+- (void)panFloatingButton:(UIPanGestureRecognizer *)gesture {
+    CGPoint translation = [gesture translationInView:self.window];
+    self.floatingBtn.center = CGPointMake(self.floatingBtn.center.x + translation.x, self.floatingBtn.center.y + translation.y);
+    [gesture setTranslation:CGPointZero inView:self.window];
+}
 
-    if (gesture.state == UIGestureRecognizerStateChanged) {
-        CGPoint delta = [gesture translationInView:container];
+// Xử lý kéo thả bảng Menu
+- (void)panMenuAction:(UIPanGestureRecognizer *)gesture {
+    CGPoint translation = [gesture translationInView:self.window];
+    self.menuView.center = CGPointMake(self.menuView.center.x + translation.x, self.menuView.center.y + translation.y);
+    [gesture setTranslation:CGPointZero inView:self.window];
+}
 
-        if (fabs(delta.x) > 4 || fabs(delta.y) > 4) {
-            self.dragging = YES;
-        }
+// Trạng thái bật/tắt Speed Hack
+- (void)speedSwitchChanged:(UISwitch *)sender {
+    self.speedEnabled = sender.isOn;
+}
 
-        if (self.dragging) {
-            CGPoint center = CGPointMake(
-                self.startCenter.x + delta.x,
-                self.startCenter.y + delta.y
-            );
-
-            CGFloat halfW = CGRectGetWidth(self.toggle.bounds) / 2.0;
-            CGFloat halfH = CGRectGetHeight(self.toggle.bounds) / 2.0;
-
-            center.x = MAX(halfW, MIN(container.bounds.size.width - halfW, center.x));
-            center.y = MAX(halfH, MIN(container.bounds.size.height - halfH, center.y));
-
-            self.toggle.center = center;
-        }
-    }
-
-    if (gesture.state == UIGestureRecognizerStateEnded && self.dragging) {
-        // Không bật/tắt menu khi người dùng vừa kéo nút.
-        [self.toggle removeTarget:self
-                           action:@selector(toggleMenu)
-                 forControlEvents:UIControlEventTouchUpInside];
-
-        [self.toggle addTarget:self
-                        action:@selector(toggleMenu)
-              forControlEvents:UIControlEventTouchUpInside];
+// Giảm tốc độ (-0.2x)
+- (void)decreaseSpeed {
+    if (self.gameSpeed > 0.2f) {
+        self.gameSpeed -= 0.2f;
+        self.speedValLabel.text = [NSString stringWithFormat:@"%.1fx", self.gameSpeed];
     }
 }
 
-- (void)toggleSpeed {
-    self.speedEnabled = !self.speedEnabled;
-    [self updateUI];
-}
-
-- (void)increase {
-    if (!self.speedEnabled) return;
-    self.speed = MIN(3.0, self.speed + 0.25);
-    [self updateUI];
-}
-
-- (void)decrease {
-    if (!self.speedEnabled) return;
-    self.speed = MAX(0.25, self.speed - 0.25);
-    [self updateUI];
-}
-
-- (void)updateUI {
-    self.valueLabel.text = [NSString stringWithFormat:@"%.2f×", self.speed];
-
-    [self.stateButton setTitle:(self.speedEnabled
-        ? @"TỐC ĐỘ: BẬT"
-        : @"TỐC ĐỘ: TẮT")
-                      forState:UIControlStateNormal];
-
-    self.stateButton.backgroundColor = self.speedEnabled
-        ? UIColor.systemGreenColor
-        : UIColor.systemRedColor;
+// Tăng tốc độ (+0.2x)
+- (void)increaseSpeed {
+    if (self.gameSpeed < 10.0f) {
+        self.gameSpeed += 0.2f;
+        self.speedValLabel.text = [NSString stringWithFormat:@"%.1fx", self.gameSpeed];
+    }
 }
 
 @end
 
-// Khởi chạy khi ứng dụng hoạt động, không dùng +load lồng nhiều block.
-static void LGTryStartMenu(void) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [[LGMenu shared] start];
-    });
+// ==========================================
+// SPEED HACK HOOK (Dành cho game Unity như Subway Surfers)
+// ==========================================
+typedef float (*Time_get_timeScale_t)(void);
+typedef void (*Time_set_timeScale_t)(float);
+
+static Time_set_timeScale_t orig_Time_set_timeScale = NULL;
+
+void hooked_Time_set_timeScale(float value) {
+    ModMenuController *menu = [ModMenuController sharedInstance];
+    if (menu.speedEnabled) {
+        orig_Time_set_timeScale(menu.gameSpeed);
+    } else {
+        orig_Time_set_timeScale(value);
+    }
 }
 
-__attribute__((constructor))
-static void LGInitialize(void) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
-
-        [center addObserverForName:UIApplicationDidBecomeActiveNotification
-                            object:nil
-                             queue:[NSOperationQueue mainQueue]
-                        usingBlock:^(NSNotification *notification) {
-            LGTryStartMenu();
-        }];
-
-        LGTryStartMenu();
+// Khởi chạy Tweak khi game load
+%ctor {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [[ModMenuController sharedInstance] setupUI];
     });
+
+    void *timeScaleSymbol = MSFindSymbol(NULL, "_UnitySetTimeScale");
+    if (timeScaleSymbol) {
+        MSHookFunction(timeScaleSymbol, (void *)&hooked_Time_set_timeScale, (void **)&orig_Time_set_timeScale);
+    }
 }
