@@ -1,5 +1,14 @@
 #import <UIKit/UIKit.h>
-#import <substrate.h>
+
+// Khai báo nguyên mẫu thay thế cho #import <substrate.h> để tương thích hoàn toàn với GitHub Actions (clang thuần)
+#ifdef __cplusplus
+extern "C" {
+#endif
+    void MSHookFunction(void *symbol, void *replace, void **result);
+    void *MSFindSymbol(void *image, const char *name);
+#ifdef __cplusplus
+}
+#endif
 
 // Quản lý toàn bộ giao diện Mod Menu
 @interface ModMenuController : NSObject
@@ -183,9 +192,7 @@
 // ==========================================
 // SPEED HACK HOOK (Dành cho game Unity như Subway Surfers)
 // ==========================================
-typedef float (*Time_get_timeScale_t)(void);
 typedef void (*Time_set_timeScale_t)(float);
-
 static Time_set_timeScale_t orig_Time_set_timeScale = NULL;
 
 void hooked_Time_set_timeScale(float value) {
@@ -197,8 +204,8 @@ void hooked_Time_set_timeScale(float value) {
     }
 }
 
-// Khởi chạy Tweak khi game load
-%ctor {
+// Constructor khởi chạy tự động khi dylib được load vào ứng dụng
+__attribute__((constructor)) static void entry() {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [[ModMenuController sharedInstance] setupUI];
     });
