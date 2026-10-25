@@ -29,9 +29,6 @@ static UILabel *speedLabel = nil;
 static CFTimeInterval lastTime = 0;
 static int frameCount = 0;
 
-// Font mặc định lưu lại
-static NSString *originalFontName = nil;
-
 // --- DOWLOAD VÀ CÀI ĐẶT NÚT NỔI (IMAGE BUTTON) ---
 static UIImage* downloadImage(NSString *urlString) {
     NSURL *url = [NSURL URLWithString:urlString];
@@ -44,12 +41,11 @@ static UIImage* downloadImage(NSString *urlString) {
 static NSString* getSystemInfo() {
     [UIDevice currentDevice].batteryMonitoringEnabled = YES;
     float batteryLevel = [UIDevice currentDevice].batteryLevel * 100.0f;
-    if (batteryLevel < 0) batteryLevel = 100.0f; // Simulator / Fallback
+    if (batteryLevel < 0) batteryLevel = 100.0f;
     
     NSString *deviceName = [UIDevice currentDevice].name;
     NSString *systemVersion = [NSString stringWithFormat:@"iOS %@", [UIDevice currentDevice].systemVersion];
     
-    // Tính Ping giả lập/ước lượng tới Google DNS
     int pingMs = 15 + (arc4random_uniform(15));
     
     return [NSString stringWithFormat:@"Dev: %@ | OS: %@\nPing: %dms | Pin: %.0f%%", deviceName, systemVersion, pingMs, batteryLevel];
@@ -76,12 +72,12 @@ static NSString* getSystemInfo() {
     // 1. NÚT BẬT TẮT NỔI (ROUNDED SQUARE BUTTON WITH IMAGE)
     mainToggleButton = [UIButton buttonWithType:UIButtonTypeCustom];
     mainToggleButton.frame = CGRectMake(50, 100, 55, 55);
-    mainToggleButton.layer.cornerRadius = 12.0f; // Bo góc
+    mainToggleButton.layer.cornerRadius = 12.0f;
     mainToggleButton.layer.masksToBounds = YES;
     mainToggleButton.layer.borderWidth = 1.5f;
-    mainToggleButton.layer.borderColor = [UIColor goldColor].CGColor;
+    // SÃM LỖI: Dùng mã màu RGB thay cho goldColor
+    mainToggleButton.layer.borderColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0].CGColor;
     
-    // Tải ảnh từ URL theo yêu cầu
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         UIImage *btnImg = downloadImage(@"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcScUbeT9dmwYYYy7sdVeOQF4_NPkll6gF4XsgB3oR5ImQ&s=10");
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -94,17 +90,16 @@ static NSString* getSystemInfo() {
         });
     });
     
-    // Kéo thả Nút Nổi
     UIPanGestureRecognizer *panBtn = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanButton:)];
     [mainToggleButton addGestureRecognizer:panBtn];
     [mainToggleButton addTarget:self action:@selector(toggleMainGui) forControlEvents:UIControlEventTouchUpInside];
     [keyWindow addSubview:mainToggleButton];
     
-    // 2. KHUNG FPS WIDGET BÉ GỌN (GOLD COLOR FPS)
+    // 2. KHUNG FPS WIDGET BÉ GỌN
     fpsWidgetView = [[UIView alloc] initWithFrame:CGRectMake(20, 40, 130, 70)];
     fpsWidgetView.backgroundColor = [UIColor colorWithRed:0.0f green:0.0f blue:0.0f alpha:0.75f];
     fpsWidgetView.layer.cornerRadius = 8.0f;
-    fpsWidgetView.layer.borderColor = [UIColor colorWithRed:0.85 green:0.75 blue:0.2 alpha:1.0].CGColor; // Gold
+    fpsWidgetView.layer.borderColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0].CGColor;
     fpsWidgetView.layer.borderWidth = 1.0f;
     fpsWidgetView.hidden = YES;
     
@@ -112,7 +107,7 @@ static NSString* getSystemInfo() {
     [fpsWidgetView addGestureRecognizer:panFps];
     
     fpsLabel = [[UILabel alloc] initWithFrame:CGRectMake(5, 5, 120, 25)];
-    fpsLabel.textColor = [UIColor colorWithRed:1.0f green:0.84f blue:0.0f alpha:1.0f]; // Gold
+    fpsLabel.textColor = [UIColor colorWithRed:1.0f green:0.84f blue:0.0f alpha:1.0f];
     fpsLabel.font = [UIFont boldSystemFontOfSize:14];
     fpsLabel.textAlignment = NSTextAlignmentCenter;
     fpsLabel.text = @"FPS: 60";
@@ -128,11 +123,10 @@ static NSString* getSystemInfo() {
     
     [keyWindow addSubview:fpsWidgetView];
     
-    // Loop cập nhật FPS & System Info
     CADisplayLink *displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(updateFPS:)];
     [displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
     
-    // 3. TẠO GUI CHÍNH DẠNG TAB (MOVABLE)
+    // 3. TẠO GUI CHÍNH DẠNG TAB
     mainGuiView = [[UIView alloc] initWithFrame:CGRectMake(60, 150, 320, 380)];
     mainGuiView.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:0.95];
     mainGuiView.layer.cornerRadius = 14.0f;
@@ -143,7 +137,6 @@ static NSString* getSystemInfo() {
     UIPanGestureRecognizer *panGui = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanGui:)];
     [mainGuiView addGestureRecognizer:panGui];
     
-    // Thanh Tiêu đề & Nút Đóng
     UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(10, 8, 200, 25)];
     title.text = @"Roblox / Delta Menu";
     title.textColor = [UIColor whiteColor];
@@ -157,7 +150,6 @@ static NSString* getSystemInfo() {
     [closeBtn addTarget:self action:@selector(toggleMainGui) forControlEvents:UIControlEventTouchUpInside];
     [mainGuiView addSubview:closeBtn];
     
-    // Tab Control
     NSArray *tabs = @[@"Cấu Hình", @"Chrome", @"YouTube", @"Speed"];
     tabControl = [[UISegmentedControl alloc] initWithItems:tabs];
     tabControl.frame = CGRectMake(10, 40, 300, 30);
@@ -172,9 +164,8 @@ static NSString* getSystemInfo() {
     [keyWindow addSubview:mainGuiView];
 }
 
-// --- TẠO NỘI DUNG DÀNH CHO CÁC TAB ---
 + (void)setupTabContents {
-    // TAB 0: CẤU HÌNH (Bật FPS Widget, Đổi Font)
+    // TAB 0: CẤU HÌNH
     UIView *tab0 = [[UIView alloc] initWithFrame:containerView.bounds];
     tab0.tag = 100;
     
@@ -214,13 +205,14 @@ static NSString* getSystemInfo() {
     [youtubeWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@"https://www.youtube.com"]]];
     [containerView addSubview:youtubeWebView];
     
-    // TAB 3: SPEED HACK (CHỈNH TỐC ĐỘ GAME)
+    // TAB 3: SPEED HACK
     speedHackView = [[UIView alloc] initWithFrame:containerView.bounds];
     speedHackView.hidden = YES;
     
     speedLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 20, 280, 40)];
     speedLabel.text = @"Tốc độ Game: 1.0x";
-    speedLabel.textColor = [UIColor goldColor];
+    // SỬA LỖI: Dùng colorWithRed thay cho goldColor
+    speedLabel.textColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
     speedLabel.font = [UIFont boldSystemFontOfSize:18];
     speedLabel.textAlignment = NSTextAlignmentCenter;
     [speedHackView addSubview:speedLabel];
@@ -252,7 +244,6 @@ static NSString* getSystemInfo() {
     [containerView addSubview:speedHackView];
 }
 
-// --- XỬ LÝ CHUYỂN TAB ---
 + (void)tabChanged:(UISegmentedControl *)sender {
     UIView *tab0 = [containerView viewWithTag:100];
     tab0.hidden = (sender.selectedSegmentIndex != 0);
@@ -261,7 +252,6 @@ static NSString* getSystemInfo() {
     speedHackView.hidden = (sender.selectedSegmentIndex != 3);
 }
 
-// --- CÁC TÍNH NĂNG ĐIỀU KHIỂN ---
 + (void)toggleMainGui {
     mainGuiView.hidden = !mainGuiView.hidden;
 }
@@ -272,7 +262,6 @@ static NSString* getSystemInfo() {
 
 + (void)toggleGameFont:(UISwitch *)sender {
     isFontCustomized = sender.isOn;
-    // Đổi font chữ toàn bộ Label thuộc hệ thống UI
     if (isFontCustomized) {
         fpsLabel.font = [UIFont fontWithName:@"Courier-Bold" size:14];
     } else {
@@ -297,7 +286,6 @@ static NSString* getSystemInfo() {
     speedLabel.text = @"Tốc độ Game: 1.0x";
 }
 
-// Cập nhật FPS
 + (void)updateFPS:(CADisplayLink *)link {
     if (lastTime == 0) {
         lastTime = link.timestamp;
@@ -314,7 +302,6 @@ static NSString* getSystemInfo() {
     }
 }
 
-// Xử lý Kéo thả (Drag Move) cho Nút & Menu
 + (void)handlePanButton:(UIPanGestureRecognizer *)pan {
     CGPoint translation = [pan translationInView:mainToggleButton.superview];
     mainToggleButton.center = CGPointMake(mainToggleButton.center.x + translation.x, mainToggleButton.center.y + translation.y);
