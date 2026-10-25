@@ -211,11 +211,14 @@
 
 - (void)fetchIPAddress {
     NSURL *url = [NSURL URLWithString:@"https://api.ipify.org"];
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    NSURLRequest *request = [NSURLRequest requestWithURL:url];
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         if (data && !error) {
             NSString *ip = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
             dispatch_async(dispatch_get_main_queue(), ^{
-                ipLabel.text = [NSString stringWithFormat:@"IP: %@", ip];
+                if (ip) {
+                    ipLabel.text = [NSString stringWithFormat:@"IP: %@", [ip stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]];
+                }
             });
         } else {
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -229,7 +232,8 @@
 - (void)measurePing {
     NSDate *start = [NSDate date];
     NSURL *url = [NSURL URLWithString:@"https://www.google.com"];
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithURL:url completionHandler:^(NSURLResponse *response, NSData *data, NSError *error) {
+    NSURLRequest *request = [NSURLRequest requestWithURL:url];
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         NSTimeInterval latency = [[NSDate date] timeIntervalSinceDate:start] * 1000;
         dispatch_async(dispatch_get_main_queue(), ^{
             pingLabel.text = [NSString stringWithFormat:@"Ping: %.0f ms", latency];
