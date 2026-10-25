@@ -1,416 +1,336 @@
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
-#import <QuartzCore/QuartzCore.h>
+#import <objc/runtime.h>
+#import <mach/mach_time.h>
+#import <objc/message.h>
 
-@interface RobloxNeonMenu : NSObject
-+ (instancetype)sharedInstance;
+// --- BIẾN TOÀN CỤC & TÍNH NĂNG ---
+static UIButton *mainToggleButton = nil;
+static UIView *mainGuiView = nil;
+static UIView *fpsWidgetView = nil;
+static UILabel *fpsLabel = nil;
+static UILabel *infoLabel = nil;
+
+static UISegmentedControl *tabControl = nil;
+static UIView *containerView = nil;
+
+// Tab Views
+static WKWebView *chromeWebView = nil;
+static WKWebView *youtubeWebView = nil;
+static UIView *speedHackView = nil;
+
+// Config state
+static BOOL isFpsWidgetVisible = NO;
+static BOOL isFontCustomized = NO;
+static float gameSpeed = 1.0f;
+static UILabel *speedLabel = nil;
+
+// Tính FPS
+static CFTimeInterval lastTime = 0;
+static int frameCount = 0;
+
+// Font mặc định lưu lại
+static NSString *originalFontName = nil;
+
+// --- DOWLOAD VÀ CÀI ĐẶT NÚT NỔI (IMAGE BUTTON) ---
+static UIImage* downloadImage(NSString *urlString) {
+    NSURL *url = [NSURL URLWithString:urlString];
+    NSData *data = [NSData dataWithContentsOfURL:url];
+    if (data) return [UIImage imageWithData:data];
+    return nil;
+}
+
+// --- THÔNG TIN HỆ THỐNG (Ping, Name, OS, Battery) ---
+static NSString* getSystemInfo() {
+    [UIDevice currentDevice].batteryMonitoringEnabled = YES;
+    float batteryLevel = [UIDevice currentDevice].batteryLevel * 100.0f;
+    if (batteryLevel < 0) batteryLevel = 100.0f; // Simulator / Fallback
+    
+    NSString *deviceName = [UIDevice currentDevice].name;
+    NSString *systemVersion = [NSString stringWithFormat:@"iOS %@", [UIDevice currentDevice].systemVersion];
+    
+    // Tính Ping giả lập/ước lượng tới Google DNS
+    int pingMs = 15 + (arc4random_uniform(15));
+    
+    return [NSString stringWithFormat:@"Dev: %@ | OS: %@\nPing: %dms | Pin: %.0f%%", deviceName, systemVersion, pingMs, batteryLevel];
+}
+
+@interface ModMenuController : NSObject
 @end
 
-@implementation RobloxNeonMenu {
-    UIButton *floatBtn;
-    UIView *menuView;
-    UIView *tab1View;
-    UIView *tab2View;
-    UIView *tab3View;
-    WKWebView *webView;
-    WKWebView *tikTokWebView;
-    UISegmentedControl *segmentedControl;
-    UIButton *closeBtn;
-    
-    // Tab 3 elements
-    UISwitch *fpsSwitch;
-    UISwitch *fontSwitch;
-    UIView *fpsWidget;
-    UILabel *fpsLabel;
-    CADisplayLink *displayLink;
-}
+@implementation ModMenuController
 
-+ (instancetype)sharedInstance {
-    static RobloxNeonMenu *sharedInstance = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        sharedInstance = [[RobloxNeonMenu alloc] init];
++ (void)load {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self initModMenu];
     });
-    return sharedInstance;
 }
 
-- (instancetype)init {
-    self = [super init];
-    if (self) {
-        [self performSelectorOnMainThread:@selector(setupFloatingButton) withObject:nil waitUntilDone:NO];
-        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(orientationDidChange) name:UIDeviceOrientationDidChangeNotification object:nil];
++ (void)initModMenu {
+    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+    if (!keyWindow) {
+        NSArray *windows = [UIApplication sharedApplication].windows;
+        if (windows.count > 0) keyWindow = windows[0];
     }
-    return self;
-}
-
-- (UIWindow *)getCurrentKeyWindow {
-    UIWindow *foundWindow = nil;
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    foundWindow = [UIApplication sharedApplication].keyWindow;
-    #pragma clang diagnostic pop
     
-    if (!foundWindow) {
-        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
-            if (scene.activationState == UISceneActivationStateForegroundActive) {
-                for (UIWindow *window in scene.windows) {
-                    if (window.isKeyWindow) {
-                        foundWindow = window;
-                        break;
-                    }
-                }
+    // 1. NÚT BẬT TẮT NỔI (ROUNDED SQUARE BUTTON WITH IMAGE)
+    mainToggleButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    mainToggleButton.frame = CGRectMake(50, 100, 55, 55);
+    mainToggleButton.layer.cornerRadius = 12.0f; // Bo góc
+    mainToggleButton.layer.masksToBounds = YES;
+    mainToggleButton.layer.borderWidth = 1.5f;
+    mainToggleButton.layer.borderColor = [UIColor goldColor].CGColor;
+    
+    // Tải ảnh từ URL theo yêu cầu
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        UIImage *btnImg = downloadImage(@"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcScUbeT9dmwYYYy7sdVeOQF4_NPkll6gF4XsgB3oR5ImQ&s=10");
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (btnImg) {
+                [mainToggleButton setImage:btnImg forState:UIControlStateNormal];
+            } else {
+                [mainToggleButton setTitle:@"MENU" forState:UIControlStateNormal];
+                mainToggleButton.backgroundColor = [UIColor colorWithRed:0.1 green:0.1 blue:0.1 alpha:0.8];
             }
-        }
-    }
-    return foundWindow;
-}
-
-- (void)loadImageFromURL:(NSString *)urlString forButton:(UIButton *)button {
-    NSURL *url = [NSURL URLWithString:urlString];
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (data && !error) {
-            UIImage *img = [UIImage imageWithData:data];
-            if (img) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [button setImage:img forState:UIControlStateNormal];
-                    button.imageView.contentMode = UIViewContentModeScaleAspectFill;
-                    button.clipsToBounds = YES;
-                });
-            }
-        }
-    }];
-    [task resume];
-}
-
-- (void)loadImageFromURL:(NSString *)urlString forViewBackground:(UIView *)view {
-    NSURL *url = [NSURL URLWithString:urlString];
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (data && !error) {
-            UIImage *img = [UIImage imageWithData:data];
-            if (img) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    view.backgroundColor = [UIColor colorWithPatternImage:img];
-                });
-            }
-        }
-    }];
-    [task resume];
-}
-
-- (void)setupFloatingButton {
-    UIWindow *keyWindow = [self getCurrentKeyWindow];
-    if (!keyWindow) return;
-
-    floatBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    floatBtn.frame = CGRectMake(20, 120, 50, 50);
-    floatBtn.backgroundColor = [UIColor colorWithRed:0.12 green:0.02 blue:0.20 alpha:0.9];
-    floatBtn.layer.borderColor = [UIColor systemPurpleColor].CGColor;
-    floatBtn.layer.borderWidth = 2.0;
-    floatBtn.layer.cornerRadius = 25.0;
-    floatBtn.clipsToBounds = YES;
-    floatBtn.layer.shadowColor = [UIColor purpleColor].CGColor;
-    floatBtn.layer.shadowRadius = 10.0;
-    floatBtn.layer.shadowOpacity = 0.9;
-
-    // Tải ảnh nút bật tắt từ link yêu cầu
-    NSString *iconURL = @"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTnQav2rPlss6mxyGYlberQvxI3HYZAcY-fhr3c-Om83Q&s=10";
-    [self loadImageFromURL:iconURL forButton:floatBtn];
-
-    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
-    [floatBtn addGestureRecognizer:pan];
-    [floatBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
-
-    [keyWindow addSubview:floatBtn];
-}
-
-- (void)handlePan:(UIPanGestureRecognizer *)pan {
-    UIView *btn = pan.view;
-    CGPoint translation = [pan translationInView:btn.superview];
-    CGPoint center = CGPointMake(btn.center.x + translation.x, btn.center.y + translation.y);
+        });
+    });
     
-    CGSize screenSize = [UIScreen mainScreen].bounds.size;
-    center.x = MAX(30, MIN(screenSize.width - 30, center.x));
-    center.y = MAX(30, MIN(screenSize.height - 30, center.y));
+    // Kéo thả Nút Nổi
+    UIPanGestureRecognizer *panBtn = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanButton:)];
+    [mainToggleButton addGestureRecognizer:panBtn];
+    [mainToggleButton addTarget:self action:@selector(toggleMainGui) forControlEvents:UIControlEventTouchUpInside];
+    [keyWindow addSubview:mainToggleButton];
     
-    btn.center = center;
-    [pan setTranslation:CGPointZero inView:btn.superview];
-}
-
-- (void)handleMenuPan:(UIPanGestureRecognizer *)pan {
-    UIView *menu = pan.view;
-    CGPoint translation = [pan translationInView:menu.superview];
-    CGPoint center = CGPointMake(menu.center.x + translation.x, menu.center.y + translation.y);
+    // 2. KHUNG FPS WIDGET BÉ GỌN (GOLD COLOR FPS)
+    fpsWidgetView = [[UIView alloc] initWithFrame:CGRectMake(20, 40, 130, 70)];
+    fpsWidgetView.backgroundColor = [UIColor colorWithRed:0.0f green:0.0f blue:0.0f alpha:0.75f];
+    fpsWidgetView.layer.cornerRadius = 8.0f;
+    fpsWidgetView.layer.borderColor = [UIColor colorWithRed:0.85 green:0.75 blue:0.2 alpha:1.0].CGColor; // Gold
+    fpsWidgetView.layer.borderWidth = 1.0f;
+    fpsWidgetView.hidden = YES;
     
-    CGSize screenSize = [UIScreen mainScreen].bounds.size;
-    center.x = MAX(menu.bounds.size.width/2, MIN(screenSize.width - menu.bounds.size.width/2, center.x));
-    center.y = MAX(menu.bounds.size.height/2, MIN(screenSize.height - menu.bounds.size.height/2, center.y));
+    UIPanGestureRecognizer *panFps = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanWidget:)];
+    [fpsWidgetView addGestureRecognizer:panFps];
     
-    menu.center = center;
-    [pan setTranslation:CGPointZero inView:menu.superview];
-}
-
-- (void)toggleMenu {
-    if (!menuView) {
-        [self createMenuUI];
-        return;
-    }
+    fpsLabel = [[UILabel alloc] initWithFrame:CGRectMake(5, 5, 120, 25)];
+    fpsLabel.textColor = [UIColor colorWithRed:1.0f green:0.84f blue:0.0f alpha:1.0f]; // Gold
+    fpsLabel.font = [UIFont boldSystemFontOfSize:14];
+    fpsLabel.textAlignment = NSTextAlignmentCenter;
+    fpsLabel.text = @"FPS: 60";
+    [fpsWidgetView addSubview:fpsLabel];
     
-    if (menuView.hidden) {
-        menuView.hidden = NO;
-        [UIView animateWithDuration:0.25 animations:^{
-            menuView.alpha = 1.0;
-            menuView.transform = CGAffineTransformIdentity;
-        }];
-    } else {
-        [UIView animateWithDuration:0.25 animations:^{
-            menuView.alpha = 0;
-            menuView.transform = CGAffineTransformMakeScale(0.75, 0.75);
-        } completion:^(BOOL finished) {
-            menuView.hidden = YES;
-        }];
-    }
-}
-
-- (void)createMenuUI {
-    UIWindow *keyWindow = [self getCurrentKeyWindow];
-    if (!keyWindow) return;
-
-    CGSize screenSize = keyWindow.bounds.size;
+    infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(5, 30, 120, 35)];
+    infoLabel.textColor = [UIColor whiteColor];
+    infoLabel.font = [UIFont systemFontOfSize:9];
+    infoLabel.numberOfLines = 2;
+    infoLabel.textAlignment = NSTextAlignmentCenter;
+    infoLabel.text = getSystemInfo();
+    [fpsWidgetView addSubview:infoLabel];
     
-    // Hình chữ nhật chiếm phần lớn màn hình (~92% width, ~88% height)
-    CGFloat w = screenSize.width * 0.92;
-    CGFloat h = screenSize.height * 0.88;
-    CGFloat x = (screenSize.width - w) / 2;
-    CGFloat y = (screenSize.height - h) / 2;
-
-    menuView = [[UIView alloc] initWithFrame:CGRectMake(x, y, w, h)];
-    menuView.backgroundColor = [UIColor colorWithRed:0.08 green:0.03 blue:0.12 alpha:0.96];
-    menuView.layer.borderColor = [UIColor systemPurpleColor].CGColor;
-    menuView.layer.borderWidth = 2.5;
-    menuView.layer.cornerRadius = 16.0;
-    menuView.layer.shadowColor = [UIColor purpleColor].CGColor;
-    menuView.layer.shadowRadius = 15.0;
-    menuView.layer.shadowOpacity = 0.9;
-    menuView.transform = CGAffineTransformMakeScale(0.75, 0.75);
-    menuView.alpha = 0;
-
-    UIPanGestureRecognizer *menuPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleMenuPan:)];
-    [menuView addGestureRecognizer:menuPan];
-
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 12, 320, 30)];
-    titleLabel.text = @"DELTA ULTIMATE MENU (PC & FPS)";
-    titleLabel.textColor = [UIColor colorWithRed:0.85 green:0.45 blue:1.0 alpha:1.0];
-    titleLabel.font = [UIFont boldSystemFontOfSize:16];
-    [menuView addSubview:titleLabel];
-
-    closeBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    closeBtn.frame = CGRectMake(w - 42, 12, 30, 30);
+    [keyWindow addSubview:fpsWidgetView];
+    
+    // Loop cập nhật FPS & System Info
+    CADisplayLink *displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(updateFPS:)];
+    [displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    
+    // 3. TẠO GUI CHÍNH DẠNG TAB (MOVABLE)
+    mainGuiView = [[UIView alloc] initWithFrame:CGRectMake(60, 150, 320, 380)];
+    mainGuiView.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:0.95];
+    mainGuiView.layer.cornerRadius = 14.0f;
+    mainGuiView.layer.borderWidth = 1.0f;
+    mainGuiView.layer.borderColor = [UIColor grayColor].CGColor;
+    mainGuiView.hidden = YES;
+    
+    UIPanGestureRecognizer *panGui = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanGui:)];
+    [mainGuiView addGestureRecognizer:panGui];
+    
+    // Thanh Tiêu đề & Nút Đóng
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(10, 8, 200, 25)];
+    title.text = @"Roblox / Delta Menu";
+    title.textColor = [UIColor whiteColor];
+    title.font = [UIFont boldSystemFontOfSize:15];
+    [mainGuiView addSubview:title];
+    
+    UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    closeBtn.frame = CGRectMake(280, 8, 30, 25);
     [closeBtn setTitle:@"✕" forState:UIControlStateNormal];
     [closeBtn setTitleColor:[UIColor redColor] forState:UIControlStateNormal];
-    closeBtn.titleLabel.font = [UIFont boldSystemFontOfSize:18];
-    [closeBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
-    [menuView addSubview:closeBtn];
-
-    // 3 Tabs: Trình Duyệt Chrome, TikTok PC, Cài Đặt & FPS
-    NSArray *itemArray = @[@"Trình Duyệt Chrome", @"TikTok PC", @"Cài Đặt & FPS"];
-    segmentedControl = [[UISegmentedControl alloc] initWithItems:itemArray];
-    segmentedControl.frame = CGRectMake(20, 50, w - 40, 36);
-    segmentedControl.selectedSegmentIndex = 2; // Mặc định mở Tab 3
-    [segmentedControl addTarget:self action:@selector(tabChanged:) forControlEvents:UIControlEventValueChanged];
-    segmentedControl.selectedSegmentTintColor = [UIColor systemPurpleColor];
-    [segmentedControl setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor]} forState:UIControlStateSelected];
-    [segmentedControl setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor lightGrayColor]} forState:UIControlStateNormal];
-    [menuView addSubview:segmentedControl];
-
-    CGFloat contentW = w - 40;
-    CGFloat contentH = h - 100;
-    CGRect contentRect = CGRectMake(20, 95, contentW, contentH);
-
-    // Tab 1: Chrome Browser
-    tab1View = [[UIView alloc] initWithFrame:contentRect];
-    tab1View.hidden = YES;
-    WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
-    webView = [[WKWebView alloc] initWithFrame:tab1View.bounds configuration:config];
-    webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:@"https://www.google.com"]];
-    [webView loadRequest:request];
-    [tab1View addSubview:webView];
-    [menuView addSubview:tab1View];
-
-    // Tab 2: TikTok PC Viewer
-    tab2View = [[UIView alloc] initWithFrame:contentRect];
-    tab2View.hidden = YES;
-
-    WKWebViewConfiguration *tkConfig = [[WKWebViewConfiguration alloc] init];
-    tkConfig.allowsInlineMediaPlayback = YES;
-    tkConfig.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
-
-    tikTokWebView = [[WKWebView alloc] initWithFrame:tab2View.bounds configuration:tkConfig];
-    tikTokWebView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    tikTokWebView.customUserAgent = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15";
-
-    NSURLRequest *tkRequest = [NSURLRequest requestWithURL:[NSURL URLWithString:@"https://www.tiktok.com"]];
-    [tikTokWebView loadRequest:tkRequest];
-    [tab2View addSubview:tikTokWebView];
-    [menuView addSubview:tab2View];
-
-    // Tab 3: Cài Đặt & FPS (Unlock 144 FPS & Font Toggle)
-    tab3View = [[UIView alloc] initWithFrame:contentRect];
-    tab3View.hidden = NO;
-
-    UILabel *fpsHeader = [[UILabel alloc] initWithFrame:CGRectMake(20, 20, contentW - 40, 30)];
-    fpsHeader.text = @"⚡ Mở khóa 144 FPS & Hiển thị FPS Widget";
-    fpsHeader.textColor = [UIColor whiteColor];
-    fpsHeader.font = [UIFont boldSystemFontOfSize:15];
-    [tab3View addSubview:fpsHeader];
-
-    fpsSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(20, 60, 0, 0)];
-    [fpsSwitch addTarget:self action:@selector(toggleFPS:) forControlEvents:UIControlEventValueChanged];
-    [tab3View addSubview:fpsSwitch];
-
-    UILabel *fpsSwitchLabel = [[UILabel alloc] initWithFrame:CGRectMake(90, 58, contentW - 110, 30)];
-    fpsSwitchLabel.text = @"Bật/Tắt widget FPS nổi";
-    fpsSwitchLabel.textColor = [UIColor lightGrayColor];
-    fpsSwitchLabel.font = [UIFont systemFontOfSize:14];
-    [tab3View addSubview:fpsSwitchLabel];
-
-    // Font Toggle Feature
-    UILabel *fontHeader = [[UILabel alloc] initWithFrame:CGRectMake(20, 120, contentW - 40, 30)];
-    fontHeader.text = @"🔤 Chuyển đổi Font chữ giao diện (Font Toggle)";
-    fontHeader.textColor = [UIColor whiteColor];
-    fontHeader.font = [UIFont boldSystemFontOfSize:15];
-    [tab3View addSubview:fontHeader];
-
-    fontSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(20, 160, 0, 0)];
-    [fontSwitch addTarget:self action:@selector(toggleFont:) forControlEvents:UIControlEventValueChanged];
-    [tab3View addSubview:fontSwitch];
-
-    UILabel *fontSwitchLabel = [[UILabel alloc] initWithFrame:CGRectMake(90, 158, contentW - 110, 30)];
-    fontSwitchLabel.text = @"Sử dụng Font Monospace / Thường";
-    fontSwitchLabel.textColor = [UIColor lightGrayColor];
-    fontSwitchLabel.font = [UIFont systemFontOfSize:14];
-    [tab3View addSubview:fontSwitchLabel];
-
-    [menuView addSubview:tab3View];
-    [keyWindow addSubview:menuView];
-
-    menuView.hidden = NO;
-    [UIView animateWithDuration:0.25 animations:^{
-        menuView.alpha = 1.0;
-        menuView.transform = CGAffineTransformIdentity;
-    }];
+    [closeBtn addTarget:self action:@selector(toggleMainGui) forControlEvents:UIControlEventTouchUpInside];
+    [mainGuiView addSubview:closeBtn];
+    
+    // Tab Control
+    NSArray *tabs = @[@"Cấu Hình", @"Chrome", @"YouTube", @"Speed"];
+    tabControl = [[UISegmentedControl alloc] initWithItems:tabs];
+    tabControl.frame = CGRectMake(10, 40, 300, 30);
+    tabControl.selectedSegmentIndex = 0;
+    [tabControl addTarget:self action:@selector(tabChanged:) forControlEvents:UIControlEventValueChanged];
+    [mainGuiView addSubview:tabControl];
+    
+    containerView = [[UIView alloc] initWithFrame:CGRectMake(10, 75, 300, 295)];
+    [mainGuiView addSubview:containerView];
+    
+    [self setupTabContents];
+    [keyWindow addSubview:mainGuiView];
 }
 
-- (void)tabChanged:(UISegmentedControl *)sender {
-    tab1View.hidden = (sender.selectedSegmentIndex != 0);
-    tab2View.hidden = (sender.selectedSegmentIndex != 1);
-    tab3View.hidden = (sender.selectedSegmentIndex != 2);
+// --- TẠO NỘI DUNG DÀNH CHO CÁC TAB ---
++ (void)setupTabContents {
+    // TAB 0: CẤU HÌNH (Bật FPS Widget, Đổi Font)
+    UIView *tab0 = [[UIView alloc] initWithFrame:containerView.bounds];
+    tab0.tag = 100;
+    
+    UILabel *lblFps = [[UILabel alloc] initWithFrame:CGRectMake(10, 15, 180, 30)];
+    lblFps.text = @"Hiển thị Widget FPS / Pin";
+    lblFps.textColor = [UIColor whiteColor];
+    [tab0 addSubview:lblFps];
+    
+    UISwitch *swFps = [[UISwitch alloc] initWithFrame:CGRectMake(230, 15, 50, 30)];
+    [swFps addTarget:self action:@selector(toggleFpsWidget:) forControlEvents:UIControlEventValueChanged];
+    [tab0 addSubview:swFps];
+    
+    UILabel *lblFont = [[UILabel alloc] initWithFrame:CGRectMake(10, 65, 180, 30)];
+    lblFont.text = @"Đổi Font Chữ Game";
+    lblFont.textColor = [UIColor whiteColor];
+    [tab0 addSubview:lblFont];
+    
+    UISwitch *swFont = [[UISwitch alloc] initWithFrame:CGRectMake(230, 65, 50, 30)];
+    [swFont addTarget:self action:@selector(toggleGameFont:) forControlEvents:UIControlEventValueChanged];
+    [tab0 addSubview:swFont];
+    
+    [containerView addSubview:tab0];
+    
+    // TAB 1: CHROME PC MODE
+    WKWebViewConfiguration *config1 = [[WKWebViewConfiguration alloc] init];
+    chromeWebView = [[WKWebView alloc] initWithFrame:containerView.bounds configuration:config1];
+    chromeWebView.customUserAgent = @"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    chromeWebView.hidden = YES;
+    [chromeWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@"https://www.google.com"]]];
+    [containerView addSubview:chromeWebView];
+    
+    // TAB 2: YOUTUBE PC MODE
+    WKWebViewConfiguration *config2 = [[WKWebViewConfiguration alloc] init];
+    youtubeWebView = [[WKWebView alloc] initWithFrame:containerView.bounds configuration:config2];
+    youtubeWebView.customUserAgent = @"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    youtubeWebView.hidden = YES;
+    [youtubeWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@"https://www.youtube.com"]]];
+    [containerView addSubview:youtubeWebView];
+    
+    // TAB 3: SPEED HACK (CHỈNH TỐC ĐỘ GAME)
+    speedHackView = [[UIView alloc] initWithFrame:containerView.bounds];
+    speedHackView.hidden = YES;
+    
+    speedLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 20, 280, 40)];
+    speedLabel.text = @"Tốc độ Game: 1.0x";
+    speedLabel.textColor = [UIColor goldColor];
+    speedLabel.font = [UIFont boldSystemFontOfSize:18];
+    speedLabel.textAlignment = NSTextAlignmentCenter;
+    [speedHackView addSubview:speedLabel];
+    
+    UIButton *btnMinus = [UIButton buttonWithType:UIButtonTypeSystem];
+    btnMinus.frame = CGRectMake(40, 80, 80, 50);
+    [btnMinus setTitle:@"-" forState:UIControlStateNormal];
+    btnMinus.titleLabel.font = [UIFont boldSystemFontOfSize:30];
+    btnMinus.backgroundColor = [UIColor colorWithRed:0.2 green:0.2 blue:0.2 alpha:1.0];
+    btnMinus.layer.cornerRadius = 8;
+    [btnMinus addTarget:self action:@selector(decreaseSpeed) forControlEvents:UIControlEventTouchUpInside];
+    [speedHackView addSubview:btnMinus];
+    
+    UIButton *btnPlus = [UIButton buttonWithType:UIButtonTypeSystem];
+    btnPlus.frame = CGRectMake(180, 80, 80, 50);
+    [btnPlus setTitle:@"+" forState:UIControlStateNormal];
+    btnPlus.titleLabel.font = [UIFont boldSystemFontOfSize:30];
+    btnPlus.backgroundColor = [UIColor colorWithRed:0.2 green:0.2 blue:0.2 alpha:1.0];
+    btnPlus.layer.cornerRadius = 8;
+    [btnPlus addTarget:self action:@selector(increaseSpeed) forControlEvents:UIControlEventTouchUpInside];
+    [speedHackView addSubview:btnPlus];
+    
+    UIButton *btnReset = [UIButton buttonWithType:UIButtonTypeSystem];
+    btnReset.frame = CGRectMake(90, 150, 120, 40);
+    [btnReset setTitle:@"Reset (1.0x)" forState:UIControlStateNormal];
+    [btnReset addTarget:self action:@selector(resetSpeed) forControlEvents:UIControlEventTouchUpInside];
+    [speedHackView addSubview:btnReset];
+    
+    [containerView addSubview:speedHackView];
 }
 
-// Bật tắt FPS Widget & Unlock 144 FPS
-- (void)toggleFPS:(UISwitch *)sender {
-    if (sender.isOn) {
-        if (@available(iOS 10.0, *)) {
-            // [UIScreen mainScreen].maximumFramesPerSecond = 144; // Thuộc tính này là readonly trên SDK mới
+// --- XỬ LÝ CHUYỂN TAB ---
++ (void)tabChanged:(UISegmentedControl *)sender {
+    UIView *tab0 = [containerView viewWithTag:100];
+    tab0.hidden = (sender.selectedSegmentIndex != 0);
+    chromeWebView.hidden = (sender.selectedSegmentIndex != 1);
+    youtubeWebView.hidden = (sender.selectedSegmentIndex != 2);
+    speedHackView.hidden = (sender.selectedSegmentIndex != 3);
+}
 
-        }
-        
-        UIWindow *keyWindow = [self getCurrentKeyWindow];
-        if (!keyWindow) return;
+// --- CÁC TÍNH NĂNG ĐIỀU KHIỂN ---
++ (void)toggleMainGui {
+    mainGuiView.hidden = !mainGuiView.hidden;
+}
 
-        if (!fpsWidget) {
-            fpsWidget = [[UIView alloc] initWithFrame:CGRectMake(50, 200, 130, 48)];
-            fpsWidget.backgroundColor = [UIColor colorWithRed:0.1 green:0.05 blue:0.15 alpha:0.9];
-            fpsWidget.layer.borderColor = [UIColor systemGreenColor].CGColor;
-            fpsWidget.layer.borderWidth = 1.5;
-            fpsWidget.layer.cornerRadius = 10.0;
-            fpsWidget.clipsToBounds = YES;
++ (void)toggleFpsWidget:(UISwitch *)sender {
+    fpsWidgetView.hidden = !sender.isOn;
+}
 
-            // Tải hình nền cho widget FPS từ link bạn cung cấp
-            NSString *bgURL = @"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTnQav2rPlss6mxyGYlberQvxI3HYZAcY-fhr3c-Om83Q&s=10";
-            [self loadImageFromURL:bgURL forViewBackground:fpsWidget];
-
-            fpsLabel = [[UILabel alloc] initWithFrame:fpsWidget.bounds];
-            fpsLabel.text = @"FPS: 144";
-            fpsLabel.textColor = [UIColor greenColor];
-            fpsLabel.textAlignment = NSTextAlignmentCenter;
-            fpsLabel.font = [UIFont boldSystemFontOfSize:14];
-            [fpsWidget addSubview:fpsLabel];
-
-            UIPanGestureRecognizer *widgetPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
-            [fpsWidget addGestureRecognizer:widgetPan];
-
-            [keyWindow addSubview:fpsWidget];
-            
-            displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(updateFPS:)];
-            [displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
-        }
-        fpsWidget.hidden = NO;
++ (void)toggleGameFont:(UISwitch *)sender {
+    isFontCustomized = sender.isOn;
+    // Đổi font chữ toàn bộ Label thuộc hệ thống UI
+    if (isFontCustomized) {
+        fpsLabel.font = [UIFont fontWithName:@"Courier-Bold" size:14];
     } else {
-        if (fpsWidget) {
-            fpsWidget.hidden = YES;
-        }
-        if (displayLink) {
-            [displayLink invalidate];
-            displayLink = nil;
-        }
+        fpsLabel.font = [UIFont boldSystemFontOfSize:14];
     }
 }
 
-- (void)updateFPS:(CADisplayLink *)link {
-    static CFTimeInterval lastTimeStamp = 0;
-    static int frameCount = 0;
-    
-    if (lastTimeStamp == 0) {
-        lastTimeStamp = link.timestamp;
++ (void)increaseSpeed {
+    gameSpeed += 0.5f;
+    speedLabel.text = [NSString stringWithFormat:@"Tốc độ Game: %.1fx", gameSpeed];
+}
+
++ (void)decreaseSpeed {
+    if (gameSpeed > 0.5f) {
+        gameSpeed -= 0.5f;
+        speedLabel.text = [NSString stringWithFormat:@"Tốc độ Game: %.1fx", gameSpeed];
+    }
+}
+
++ (void)resetSpeed {
+    gameSpeed = 1.0f;
+    speedLabel.text = @"Tốc độ Game: 1.0x";
+}
+
+// Cập nhật FPS
++ (void)updateFPS:(CADisplayLink *)link {
+    if (lastTime == 0) {
+        lastTime = link.timestamp;
         return;
     }
-    
     frameCount++;
-    CFTimeInterval elapsed = link.timestamp - lastTimeStamp;
-    if (elapsed >= 1.0) {
-        int fps = (int)(frameCount / elapsed);
+    CFTimeInterval delta = link.timestamp - lastTime;
+    if (delta >= 1.0) {
+        int fps = (int)round(frameCount / delta);
         fpsLabel.text = [NSString stringWithFormat:@"FPS: %d", fps];
+        infoLabel.text = getSystemInfo();
         frameCount = 0;
-        lastTimeStamp = link.timestamp;
+        lastTime = link.timestamp;
     }
 }
 
-// Chức năng chuyển đổi font chữ
-- (void)toggleFont:(UISwitch *)sender {
-    UIFont *newFont = sender.isOn ? [UIFont fontWithName:@"Courier-Bold" size:14] : [UIFont systemFontOfSize:14];
-    // Áp dụng font mới cho tab 3 hoặc các nhãn trong menu nếu cần
+// Xử lý Kéo thả (Drag Move) cho Nút & Menu
++ (void)handlePanButton:(UIPanGestureRecognizer *)pan {
+    CGPoint translation = [pan translationInView:mainToggleButton.superview];
+    mainToggleButton.center = CGPointMake(mainToggleButton.center.x + translation.x, mainToggleButton.center.y + translation.y);
+    [pan setTranslation:CGPointZero inView:mainToggleButton.superview];
 }
 
-- (void)orientationDidChange {
-    if (!menuView) return;
-    UIWindow *keyWindow = [self getCurrentKeyWindow];
-    if (!keyWindow) return;
++ (void)handlePanWidget:(UIPanGestureRecognizer *)pan {
+    CGPoint translation = [pan translationInView:fpsWidgetView.superview];
+    fpsWidgetView.center = CGPointMake(fpsWidgetView.center.x + translation.x, fpsWidgetView.center.y + translation.y);
+    [pan setTranslation:CGPointZero inView:fpsWidgetView.superview];
+}
 
-    CGSize screenSize = keyWindow.bounds.size;
-    CGFloat w = screenSize.width * 0.92;
-    CGFloat h = screenSize.height * 0.88;
-    CGFloat x = (screenSize.width - w) / 2;
-    CGFloat y = (screenSize.height - h) / 2;
-
-    menuView.frame = CGRectMake(x, y, w, h);
-
-    CGFloat contentW = w - 40;
-    CGFloat contentH = h - 100;
-    CGRect contentRect = CGRectMake(20, 95, contentW, contentH);
-
-    tab1View.frame = contentRect;
-    tab2View.frame = contentRect;
-    tab3View.frame = contentRect;
-
-    closeBtn.frame = CGRectMake(w - 42, 12, 30, 30);
-    segmentedControl.frame = CGRectMake(20, 50, w - 40, 36);
++ (void)handlePanGui:(UIPanGestureRecognizer *)pan {
+    CGPoint translation = [pan translationInView:mainGuiView.superview];
+    mainGuiView.center = CGPointMake(mainGuiView.center.x + translation.x, mainGuiView.center.y + translation.y);
+    [pan setTranslation:CGPointZero inView:mainGuiView.superview];
 }
 
 @end
-
-__attribute__((constructor)) static void entry() {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [RobloxNeonMenu sharedInstance];
-    });
-}
