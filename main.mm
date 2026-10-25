@@ -1,154 +1,301 @@
 
 #import <UIKit/UIKit.h>
+#import <QuartzCore/QuartzCore.h>
+#import <math.h>
 
-@interface ViewController ()
-@property (nonatomic, strong) UIButton *toggleButton;
-@property (nonatomic, strong) UIView *menu;
+@interface LGMenu : NSObject
+@property (nonatomic, strong) UIView *panel;
+@property (nonatomic, strong) UIButton *toggle;
 @property (nonatomic, strong) UILabel *speedLabel;
+@property (nonatomic, strong) UIButton *enableButton;
 @property (nonatomic, assign) CGFloat speed;
 @property (nonatomic, assign) BOOL speedEnabled;
+@property (nonatomic, assign) BOOL visible;
+@property (nonatomic, assign) CGPoint dragCenter;
+@property (nonatomic, assign) CGPoint lastCenter;
 @end
 
-@implementation ViewController
+@implementation LGMenu
 
-- (void)viewDidLoad {
-    [super viewDidLoad];
++ (instancetype)shared {
+    static LGMenu *instance;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        instance = [[LGMenu alloc] init];
+    });
+    return instance;
+}
+
+- (void)start {
+    if (self.toggle.superview) return;
+
+    UIWindow *window = nil;
+
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if (![scene isKindOfClass:UIWindowScene.class]) continue;
+            UIWindowScene *ws = (UIWindowScene *)scene;
+            if (ws.activationState != UISceneActivationStateForegroundActive)
+                continue;
+
+            for (UIWindow *w in ws.windows) {
+                if (w.isKeyWindow) {
+                    window = w;
+                    break;
+                }
+            }
+            if (window) break;
+        }
+    }
+
+    if (!window) {
+        for (UIWindow *w in UIApplication.sharedApplication.windows) {
+            if (!w.hidden && w.alpha > 0) {
+                window = w;
+                if (w.isKeyWindow) break;
+            }
+        }
+    }
+
+    if (!window) return;
 
     self.speed = 1.0;
     self.speedEnabled = YES;
-    self.view.backgroundColor = UIColor.systemBackgroundColor;
+    self.visible = YES;
 
     // Nút nổi
-    self.toggleButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.toggleButton.frame = CGRectMake(self.view.bounds.size.width - 78, 150, 60, 60);
-    self.toggleButton.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
-    [self.toggleButton setTitle:@"LG" forState:UIControlStateNormal];
-    self.toggleButton.titleLabel.font = [UIFont boldSystemFontOfSize:19];
-    [self.toggleButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    self.toggleButton.backgroundColor = [UIColor colorWithWhite:0.2 alpha:0.8];
-    self.toggleButton.layer.cornerRadius = 30;
-    self.toggleButton.layer.borderWidth = 1;
-    self.toggleButton.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.5].CGColor;
-    [self.toggleButton addTarget:self action:@selector(toggleMenu)
-                forControlEvents:UIControlEventTouchUpInside];
-    [self.view addSubview:self.toggleButton];
+    self.toggle = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.toggle.frame = CGRectMake(
+        MAX(12, window.bounds.size.width - 76), 180, 60, 60
+    );
+    [self.toggle setTitle:@"LG" forState:UIControlStateNormal];
+    [self.toggle setTitleColor:UIColor.whiteColor
+                      forState:UIControlStateNormal];
+    self.toggle.titleLabel.font =
+        [UIFont boldSystemFontOfSize:19];
+    self.toggle.backgroundColor =
+        [UIColor colorWithWhite:0.12 alpha:0.78];
+    self.toggle.layer.cornerRadius = 30;
+    self.toggle.layer.borderWidth = 1;
+    self.toggle.layer.borderColor =
+        [UIColor colorWithWhite:1 alpha:0.45].CGColor;
+    self.toggle.layer.shadowColor = UIColor.blackColor.CGColor;
+    self.toggle.layer.shadowOpacity = 0.2;
+    self.toggle.layer.shadowRadius = 10;
+
+    [self.toggle addTarget:self
+                    action:@selector(togglePanel)
+          forControlEvents:UIControlEventTouchUpInside];
 
     UIPanGestureRecognizer *pan =
-    [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragButton:)];
-    [self.toggleButton addGestureRecognizer:pan];
+        [[UIPanGestureRecognizer alloc]
+            initWithTarget:self action:@selector(drag:)];
 
-    // Menu kính mờ
-    self.menu = [[UIView alloc] initWithFrame:CGRectMake(20, 230, 260, 190)];
-    self.menu.hidden = NO;
-    self.menu.layer.cornerRadius = 24;
-    self.menu.clipsToBounds = YES;
-    self.menu.layer.borderWidth = 1;
-    self.menu.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.3].CGColor;
+    [self.toggle addGestureRecognizer:pan];
+    [window addSubview:self.toggle];
+
+    // Bảng Liquid Glass
+    self.panel = [[UIView alloc]
+        initWithFrame:CGRectMake(16, 260, 260, 205)];
+
+    self.panel.backgroundColor = UIColor.clearColor;
+    self.panel.layer.cornerRadius = 24;
+    self.panel.layer.cornerCurve = kCACornerCurveContinuous;
+    self.panel.layer.borderWidth = 1;
+    self.panel.layer.borderColor =
+        [UIColor colorWithWhite:1 alpha:0.3].CGColor;
+    self.panel.clipsToBounds = YES;
 
     UIBlurEffect *blur =
-    [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterial];
+        [UIBlurEffect effectWithStyle:
+            UIBlurEffectStyleSystemThinMaterialDark];
+
     UIVisualEffectView *glass =
-    [[UIVisualEffectView alloc] initWithEffect:blur];
-    glass.frame = self.menu.bounds;
-    glass.autoresizingMask = UIViewAutoresizingFlexibleWidth |
-                             UIViewAutoresizingFlexibleHeight;
-    [self.menu addSubview:glass];
+        [[UIVisualEffectView alloc] initWithEffect:blur];
 
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(15, 10, 230, 28)];
+    glass.frame = self.panel.bounds;
+    glass.autoresizingMask =
+        UIViewAutoresizingFlexibleWidth |
+        UIViewAutoresizingFlexibleHeight;
+
+    [self.panel addSubview:glass];
+
+    UILabel *title = [[UILabel alloc]
+        initWithFrame:CGRectMake(15, 10, 230, 28)];
+
     title.text = @"LIQUID GLASS";
+    title.textColor = UIColor.whiteColor;
     title.font = [UIFont boldSystemFontOfSize:15];
-    title.textColor = UIColor.labelColor;
-    [self.menu addSubview:title];
+    [self.panel addSubview:title];
 
-    UIButton *enable = [UIButton buttonWithType:UIButtonTypeSystem];
-    enable.frame = CGRectMake(15, 45, 230, 35);
-    enable.tag = 10;
-    enable.layer.cornerRadius = 12;
-    enable.backgroundColor = UIColor.systemGreenColor;
-    [enable setTitle:@"TỐC ĐỘ: BẬT" forState:UIControlStateNormal];
-    [enable setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    [enable addTarget:self action:@selector(toggleSpeed)
-     forControlEvents:UIControlEventTouchUpInside];
-    [self.menu addSubview:enable];
+    // Bật / tắt điều chỉnh tốc độ
+    self.enableButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.enableButton.frame = CGRectMake(15, 45, 230, 36);
+    self.enableButton.layer.cornerRadius = 12;
+    self.enableButton.titleLabel.font =
+        [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
 
-    self.speedLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 85, 230, 35)];
+    [self.enableButton setTitleColor:UIColor.whiteColor
+                            forState:UIControlStateNormal];
+
+    [self.enableButton addTarget:self
+                          action:@selector(toggleSpeed)
+                forControlEvents:UIControlEventTouchUpInside];
+
+    [self.panel addSubview:self.enableButton];
+
+    // Giá trị tốc độ
+    self.speedLabel = [[UILabel alloc]
+        initWithFrame:CGRectMake(15, 88, 230, 35)];
+
     self.speedLabel.textAlignment = NSTextAlignmentCenter;
-    self.speedLabel.font = [UIFont boldSystemFontOfSize:25];
-    self.speedLabel.textColor = UIColor.labelColor;
-    [self.menu addSubview:self.speedLabel];
+    self.speedLabel.textColor = UIColor.whiteColor;
+    self.speedLabel.font =
+        [UIFont monospacedDigitSystemFontOfSize:25
+                                         weight:UIFontWeightSemibold];
 
+    [self.panel addSubview:self.speedLabel];
+
+    // Nút trừ
     UIButton *minus = [UIButton buttonWithType:UIButtonTypeSystem];
-    minus.frame = CGRectMake(15, 130, 105, 45);
-    minus.layer.cornerRadius = 13;
-    minus.backgroundColor = [UIColor colorWithWhite:0.5 alpha:0.2];
+    minus.frame = CGRectMake(15, 137, 105, 48);
+    minus.layer.cornerRadius = 14;
+    minus.backgroundColor = [UIColor colorWithWhite:1 alpha:0.16];
     [minus setTitle:@"−" forState:UIControlStateNormal];
-    minus.titleLabel.font = [UIFont boldSystemFontOfSize:26];
-    [minus addTarget:self action:@selector(decreaseSpeed)
-     forControlEvents:UIControlEventTouchUpInside];
-    [self.menu addSubview:minus];
+    [minus setTitleColor:UIColor.whiteColor
+                forState:UIControlStateNormal];
+    minus.titleLabel.font = [UIFont boldSystemFontOfSize:27];
 
-    UIButton *plus = [UIButton buttonWithType:UIButtonTypeSystem];
-    plus.frame = CGRectMake(140, 130, 105, 45);
-    plus.layer.cornerRadius = 13;
-    plus.backgroundColor = [UIColor colorWithWhite:0.5 alpha:0.2];
-    [plus setTitle:@"+" forState:UIControlStateNormal];
-    plus.titleLabel.font = [UIFont boldSystemFontOfSize:26];
-    [plus addTarget:self action:@selector(increaseSpeed)
+    [minus addTarget:self
+              action:@selector(decrease)
     forControlEvents:UIControlEventTouchUpInside];
-    [self.menu addSubview:plus];
 
-    [self.view addSubview:self.menu];
-    [self updateSpeed];
+    [self.panel addSubview:minus];
+
+    // Nút cộng
+    UIButton *plus = [UIButton buttonWithType:UIButtonTypeSystem];
+    plus.frame = CGRectMake(140, 137, 105, 48);
+    plus.layer.cornerRadius = 14;
+    plus.backgroundColor = [UIColor colorWithWhite:1 alpha:0.16];
+    [plus setTitle:@"+" forState:UIControlStateNormal];
+    [plus setTitleColor:UIColor.whiteColor
+               forState:UIControlStateNormal];
+    plus.titleLabel.font = [UIFont boldSystemFontOfSize:27];
+
+    [plus addTarget:self
+             action:@selector(increase)
+   forControlEvents:UIControlEventTouchUpInside];
+
+    [self.panel addSubview:plus];
+
+    [window addSubview:self.panel];
+    [self refresh];
 }
 
-- (void)toggleMenu {
-    self.menu.hidden = !self.menu.hidden;
+- (void)togglePanel {
+    self.visible = !self.visible;
+
+    [UIView animateWithDuration:0.2 animations:^{
+        self.panel.alpha = self.visible ? 1 : 0;
+        self.panel.transform = self.visible
+            ? CGAffineTransformIdentity
+            : CGAffineTransformMakeScale(0.94, 0.94);
+    } completion:^(BOOL finished) {
+        self.panel.hidden = !self.visible;
+    }];
 }
 
-- (void)dragButton:(UIPanGestureRecognizer *)gesture {
-    CGPoint delta = [gesture translationInView:self.view];
-    CGPoint center = self.toggleButton.center;
-    center.x += delta.x;
-    center.y += delta.y;
+- (void)drag:(UIPanGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        self.lastCenter = self.toggle.center;
+    }
 
-    CGFloat halfW = self.toggleButton.bounds.size.width / 2;
-    CGFloat halfH = self.toggleButton.bounds.size.height / 2;
-    center.x = MAX(halfW, MIN(self.view.bounds.size.width - halfW, center.x));
-    center.y = MAX(halfH, MIN(self.view.bounds.size.height - halfH, center.y));
+    if (gesture.state == UIGestureRecognizerStateChanged) {
+        CGPoint delta = [gesture translationInView:self.toggle.superview];
 
-    self.toggleButton.center = center;
-    [gesture setTranslation:CGPointZero inView:self.view];
+        CGPoint center = CGPointMake(
+            self.lastCenter.x + delta.x,
+            self.lastCenter.y + delta.y
+        );
+
+        UIView *container = self.toggle.superview;
+        CGFloat halfW = self.toggle.bounds.size.width / 2;
+        CGFloat halfH = self.toggle.bounds.size.height / 2;
+
+        center.x = MAX(halfW, MIN(container.bounds.size.width - halfW,
+                                  center.x));
+        center.y = MAX(halfH, MIN(container.bounds.size.height - halfH,
+                                  center.y));
+
+        self.toggle.center = center;
+    }
 }
 
 - (void)toggleSpeed {
     self.speedEnabled = !self.speedEnabled;
-    [self updateSpeed];
+    [self refresh];
 }
 
-- (void)increaseSpeed {
+- (void)increase {
     if (!self.speedEnabled) return;
     self.speed = MIN(3.0, self.speed + 0.25);
-    [self updateSpeed];
+    [self refresh];
 }
 
-- (void)decreaseSpeed {
+- (void)decrease {
     if (!self.speedEnabled) return;
     self.speed = MAX(0.25, self.speed - 0.25);
-    [self updateSpeed];
+    [self refresh];
 }
 
-- (void)updateSpeed {
+- (void)refresh {
     self.speedLabel.text =
         [NSString stringWithFormat:@"%.2f×", self.speed];
 
-    UIButton *button = [self.menu viewWithTag:10];
-    [button setTitle:(self.speedEnabled ? @"TỐC ĐỘ: BẬT" : @"TỐC ĐỘ: TẮT")
-            forState:UIControlStateNormal];
-    button.backgroundColor = self.speedEnabled
-        ? UIColor.systemGreenColor : UIColor.systemRedColor;
+    [self.enableButton
+        setTitle:(self.speedEnabled
+            ? @"TỐC ĐỘ: BẬT"
+            : @"TỐC ĐỘ: TẮT")
+        forState:UIControlStateNormal];
 
-    // Hệ số self.speed cần được tích hợp vào logic của ứng dụng.
-    // Nó không tự thay đổi tốc độ của ứng dụng hoặc game khác.
+    self.enableButton.backgroundColor = self.speedEnabled
+        ? UIColor.systemGreenColor
+        : UIColor.systemRedColor;
+}
+
+@end
+
+// Khởi tạo khi ứng dụng đã hoạt động.
+@interface LGMenuLoader : NSObject
+@end
+
+@implementation LGMenuLoader
+
++ (void)load {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[NSNotificationCenter defaultCenter]
+            addObserverForName:UIApplicationDidBecomeActiveNotification
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(NSNotification *note) {
+            dispatch_after(
+                dispatch_time(DISPATCH_TIME_NOW,
+                              (int64_t)(0.5 * NSEC_PER_SEC)),
+                dispatch_get_main_queue(), ^{
+                    [[LGMenu shared] start];
+                });
+        });
+
+        if (UIApplication.sharedApplication.applicationState
+                == UIApplicationStateActive) {
+            dispatch_after(
+                dispatch_time(DISPATCH_TIME_NOW,
+                              (int64_t)(0.5 * NSEC_PER_SEC)),
+                dispatch_get_main_queue(), ^{
+                    [[LGMenu shared] start];
+                });
+        }
+    });
 }
 
 @end
