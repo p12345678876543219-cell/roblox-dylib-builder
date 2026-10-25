@@ -95,16 +95,24 @@
 }
 
 - (void)toggleMenu {
-    if (menuView && menuView.superview) {
+    if (!menuView) {
+        [self createMenuUI];
+        return;
+    }
+    
+    if (menuView.hidden) {
+        menuView.hidden = NO;
+        [UIView animateWithDuration:0.25 animations:^{
+            menuView.alpha = 1.0;
+            menuView.transform = CGAffineTransformIdentity;
+        }];
+    } else {
         [UIView animateWithDuration:0.25 animations:^{
             menuView.alpha = 0;
             menuView.transform = CGAffineTransformMakeScale(0.75, 0.75);
         } completion:^(BOOL finished) {
-            [menuView removeFromSuperview];
-            menuView = nil;
+            menuView.hidden = YES; // Ẩn GUI nhưng giữ nguyên trạng thái YouTube phát âm thanh ngầm
         }];
-    } else {
-        [self createMenuUI];
     }
 }
 
@@ -173,13 +181,13 @@
     [tab1View addSubview:webView];
     [menuView addSubview:tab1View];
 
-    // Tab 2: YouTube Player
+    // Tab 2: YouTube Player (Hỗ trợ phát âm thanh ngầm)
     tab2View = [[UIView alloc] initWithFrame:contentRect];
     tab2View.hidden = YES;
 
     WKWebViewConfiguration *ytConfig = [[WKWebViewConfiguration alloc] init];
     ytConfig.allowsInlineMediaPlayback = YES;
-    ytConfig.mediaPlaybackAllowsUserAction = NO;
+    ytConfig.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
 
     youtubeWebView = [[WKWebView alloc] initWithFrame:tab2View.bounds configuration:ytConfig];
     youtubeWebView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -190,6 +198,7 @@
 
     [keyWindow addSubview:menuView];
 
+    menuView.hidden = NO;
     [UIView animateWithDuration:0.25 animations:^{
         menuView.alpha = 1.0;
         menuView.transform = CGAffineTransformIdentity;
@@ -207,7 +216,7 @@
 }
 
 - (void)orientationDidChange {
-    if (!menuView || !menuView.superview) return;
+    if (!menuView) return;
     UIWindow *keyWindow = [self getCurrentKeyWindow];
     if (!keyWindow) return;
 
