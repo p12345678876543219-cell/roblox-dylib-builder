@@ -1,291 +1,237 @@
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
-#import <AVFoundation/AVFoundation.h>
-#import <CoreText/CoreText.h>
+#import <QuartzCore/QuartzCore.h>
 
-@interface ModMenuManager : NSObject
+@interface TweakManager : NSObject
 + (instancetype)sharedInstance;
-- (void)showMenu;
+- (void)setupUI;
 @end
 
-@interface ModMenuWindow : UIWindow
+// --- 1. Hộp FPS nhỏ gọn, di chuyển được & Hiệu ứng sóng âm ---
+@interface FPSVisualizerView : UIView
+@property (nonatomic, strong) UILabel *fpsLabel;
+@property (nonatomic, strong) NSMutableArray<UIView *> *barViews;
 @end
 
-@implementation ModMenuWindow
-- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
-    for (UIView *subview in self.subviews) {
-        if (!subview.isHidden && subview.alpha > 0.01 && [subview pointInside:[self convertPoint:point toView:subview] withEvent:event]) {
-            return YES;
-        }
-    }
-    return NO;
-}
-@end
-
-@interface ModMenuViewController : UIViewController <WKNavigationDelegate, WKUIDelegate>
-@property (nonatomic, strong) UIView *configView;
-@property (nonatomic, strong) WKWebView *chromeWebView;
-@property (nonatomic, strong) WKWebView *youtubeWebView;
-@property (nonatomic, strong) UIView *speedHackView;
-@property (nonatomic, strong) UIButton *activeTabButton;
-@end
-
-@implementation ModMenuViewController {
-    UIButton *floatingButton;
-    UIView *menuPanel;
+@implementation FPSVisualizerView {
+    CADisplayLink *_displayLink;
+    NSTimeInterval _lastTimestamp;
+    NSInteger _frameCount;
 }
 
-- (void)viewDidLoad {
-    [super viewDidLoad];
-    self.view.backgroundColor = [UIColor clearColor];
-    [self setupFloatingButton];
-    [self setupMenuPanel];
-}
-
-- (void)setupFloatingButton {
-    floatingButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    floatingButton.frame = CGRectMake(20, 100, 50, 50);
-    floatingButton.backgroundColor = [UIColor colorWithRed:0.1 green:0.1 blue:0.1 alpha:0.9];
-    floatingButton.layer.cornerRadius = 25;
-    floatingButton.layer.borderWidth = 2.0;
-    floatingButton.layer.borderColor = [UIColor systemGreenColor].CGColor;
-    [floatingButton setTitle:@"MOD" forState:UIControlStateNormal];
-    [floatingButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    floatingButton.titleLabel.font = [UIFont boldSystemFontOfSize:12];
-    [floatingButton addTarget:self action:@selector(floatingButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
-    
-    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
-    [floatingButton addGestureRecognizer:pan];
-    
-    [self.view addSubview:floatingButton];
-}
-
-- (void)handlePan:(UIPanGestureRecognizer *)recognizer {
-    CGPoint translation = [recognizer translationInView:self.view];
-    CGPoint center = recognizer.view.center;
-    recognizer.view.center = CGPointMake(center.x + translation.x, center.y + translation.y);
-    [recognizer setTranslation:CGPointZero inView:self.view];
-    
-    if (recognizer.state == UIGestureRecognizerStateEnded) {
-        CGRect frame = floatingButton.frame;
-        CGFloat screenWidth = self.view.bounds.size.width;
-        CGFloat screenHeight = self.view.bounds.size.height;
-        
-        if (frame.origin.x < screenWidth / 2) {
-            frame.origin.x = 15;
-        } else {
-            frame.origin.x = screenWidth - frame.size.width - 15;
-        }
-        if (frame.origin.y < 40) frame.origin.y = 40;
-        if (frame.origin.y > screenHeight - frame.size.height - 40) frame.origin.y = screenHeight - frame.size.height - 40;
-        
-        [UIView animateWithDuration:0.3 animations:^{
-            self->floatingButton.frame = frame;
-        }];
-    }
-}
-
-- (void)floatingButtonTapped:(UIButton *)sender {
-    menuPanel.hidden = !menuPanel.hidden;
-}
-
-- (void)setupMenuPanel {
-    CGFloat panelWidth = 420;
-    CGFloat panelHeight = 280;
-    CGFloat screenWidth = self.view.bounds.size.width;
-    CGFloat screenHeight = self.view.bounds.size.height;
-    
-    menuPanel = [[UIView alloc] initWithFrame:CGRectMake((screenWidth - panelWidth) / 2, (screenHeight - panelHeight) / 2, panelWidth, panelHeight)];
-    menuPanel.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.15 alpha:0.95];
-    menuPanel.layer.cornerRadius = 14;
-    menuPanel.layer.borderWidth = 1.5;
-    menuPanel.layer.borderColor = [UIColor systemGreenColor].CGColor;
-    menuPanel.hidden = YES;
-    
-    // Tiêu đề Menu
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 10, panelWidth - 50, 30)];
-    titleLabel.text = @"MINECRAFT MOD MENU v1.42";
-    titleLabel.textColor = [UIColor whiteColor];
-    titleLabel.font = [UIFont boldSystemFontOfSize:14];
-    [menuPanel addSubview:titleLabel];
-    
-    // Nút Đóng (X)
-    UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    closeBtn.frame = CGRectMake(panelWidth - 35, 10, 25, 25);
-    [closeBtn setTitle:@"✕" forState:UIControlStateNormal];
-    [closeBtn setTitleColor:[UIColor redColor] forState:UIControlStateNormal];
-    [closeBtn addTarget:self action:@selector(floatingButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [menuPanel addSubview:closeBtn];
-    
-    // Các Tab Chức năng
-    CGFloat tabY = 45;
-    NSArray *tabs = @[@"Config", @"Chrome", @"YouTube", @"SpeedHack"];
-    CGFloat tabWidth = (panelWidth - 30) / tabs.count;
-    
-    for (int i = 0; i < tabs.count; i++) {
-        UIButton *tabBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-        tabBtn.frame = CGRectMake(15 + i * tabWidth, tabY, tabWidth, 30);
-        [tabBtn setTitle:tabs[i] forState:UIControlStateNormal];
-        [tabBtn setTitleColor:[UIColor lightGrayColor] forState:UIControlStateNormal];
-        [tabBtn setTitleColor:[UIColor systemGreenColor] forState:UIControlStateSelected];
-        tabBtn.titleLabel.font = [UIFont systemFontOfSize:12];
-        tabBtn.tag = 100 + i;
-        [tabBtn addTarget:self action:@selector(tabTapped:) forControlEvents:UIControlEventTouchUpInside];
-        [menuPanel addSubview:tabBtn];
-        if (i == 0) {
-            tabBtn.selected = YES;
-            self.activeTabButton = tabBtn;
-        }
-    }
-    
-    // Khu vực chứa nội dung các Tab
-    CGFloat contentY = 80;
-    CGFloat contentHeight = panelHeight - contentY - 15;
-    CGFloat contentWidth = panelWidth - 30;
-    
-    // 1. Tab Config
-    self.configView = [[UIView alloc] initWithFrame:CGRectMake(15, contentY, contentWidth, contentHeight)];
-    UILabel *cfgLbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 10, contentWidth - 80, 25)];
-    cfgLbl.text = @"[+] Godmode (Bất tử)";
-    cfgLbl.textColor = [UIColor whiteColor];
-    cfgLbl.font = [UIFont systemFontOfSize:12];
-    [self.configView addSubview:cfgLbl];
-    
-    UISwitch *godModeSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(contentWidth - 60, 8, 0, 0)];
-    [godModeSwitch setOn:YES];
-    [self.configView addSubview:godModeSwitch];
-    [menuPanel addSubview:self.configView];
-    
-    // 2. Tab Chrome (Trình duyệt web)
-    WKWebViewConfiguration *chromeCfg = [[WKWebViewConfiguration alloc] init];
-    self.chromeWebView = [[WKWebView alloc] initWithFrame:CGRectMake(15, contentY, contentWidth, contentHeight) configuration:chromeCfg];
-    self.chromeWebView.navigationDelegate = self;
-    self.chromeWebView.hidden = YES;
-    [self.chromeWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@"https://www.google.com"]]];
-    [menuPanel addSubview:self.chromeWebView];
-    
-    // 3. Tab YouTube (Hỗ trợ phát nhạc chạy ngầm)
-    WKWebViewConfiguration *ytCfg = [[WKWebViewConfiguration alloc] init];
-    ytCfg.allowsInlineMediaPlayback = YES;
-    if (@available(iOS 10.0, *)) {
-        ytCfg.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
-    }
-    self.youtubeWebView = [[WKWebView alloc] initWithFrame:CGRectMake(15, contentY, contentWidth, contentHeight) configuration:ytCfg];
-    self.youtubeWebView.navigationDelegate = self;
-    self.youtubeWebView.hidden = YES;
-    [self.youtubeWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@"https://www.youtube.com"]]];
-    [menuPanel addSubview:self.youtubeWebView];
-    
-    // Kích hoạt Audio Session cho YouTube chạy ngầm
-    NSError *error = nil;
-    [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:&error];
-    [[AVAudioSession sharedInstance] setActive:YES error:nil];
-    
-    // 4. Tab SpeedHack (Tốc độ game)
-    self.speedHackView = [[UIView alloc] initWithFrame:CGRectMake(15, contentY, contentWidth, contentHeight)];
-    self.speedHackView.hidden = YES;
-    UILabel *speedLbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 20, contentWidth, 20)];
-    speedLbl.text = @"Game Speed Multiplier: 1.0x";
-    speedLbl.textColor = [UIColor whiteColor];
-    speedLbl.font = [UIFont systemFontOfSize:12];
-    [self.speedHackView addSubview:speedLbl];
-    
-    UISlider *speedSlider = [[UISlider alloc] initWithFrame:CGRectMake(0, 60, contentWidth, 30)];
-    speedSlider.minimumValue = 0.5;
-    speedSlider.maximumValue = 5.0;
-    speedSlider.value = 1.0;
-    [self.speedHackView addSubview:speedSlider];
-    [menuPanel addSubview:self.speedHackView];
-    
-    [self.view addSubview:menuPanel];
-}
-
-- (void)tabTapped:(UIButton *)sender {
-    self.activeTabButton.selected = NO;
-    sender.selected = YES;
-    self.activeTabButton = sender;
-    
-    self.configView.hidden = YES;
-    self.chromeWebView.hidden = YES;
-    self.youtubeWebView.hidden = YES;
-    self.speedHackView.hidden = YES;
-    
-    NSInteger index = sender.tag - 100;
-    if (index == 0) self.configView.hidden = NO;
-    else if (index == 1) self.chromeWebView.hidden = NO;
-    else if (index == 2) self.youtubeWebView.hidden = NO;
-    else if (index == 3) self.speedHackView.hidden = NO;
-}
-
-@end
-
-@implementation ModMenuManager {
-    ModMenuWindow *overlayWindow;
-}
-
-+ (instancetype)sharedInstance {
-    static ModMenuManager *sharedInstance = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        sharedInstance = [[ModMenuManager alloc] init];
-    });
-    return sharedInstance;
-}
-
-- (instancetype)init {
-    self = [super init];
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
     if (self) {
-        [self performSelectorOnMainThread:@selector(setupWindow) withObject:nil waitUntilDone:NO];
+        self.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.75];
+        self.layer.cornerRadius = 10;
+        self.layer.borderWidth = 1;
+        self.layer.borderColor = [[UIColor cyanColor] CGColor];
+        self.clipsToBounds = YES;
+        
+        // Nhãn hiển thị FPS
+        self.fpsLabel = [[UILabel alloc] initWithFrame:CGRectMake(5, 5, frame.size.width - 10, 20)];
+        self.fpsLabel.textColor = [UIColor greenColor];
+        self.fpsLabel.font = [UIFont boldSystemFontOfSize:12];
+        self.fpsLabel.textAlignment = NSTextAlignmentCenter;
+        self.fpsLabel.text = @"FPS: 60";
+        [self addSubview:self.fpsLabel];
+        
+        // Tạo các thanh sóng âm (Audio Visualizer bars)
+        CGFloat barWidth = 4;
+        CGFloat spacing = 3;
+        int numBars = 5;
+        CGFloat startX = (frame.size.width - (numBars * (barWidth + spacing))) / 2;
+        
+        self.barViews = [NSMutableArray array];
+        for (int i = 0; i < numBars; i++) {
+            UIView *bar = [[UIView alloc] initWithFrame:CGRectMake(startX + i * (barWidth + spacing), 30, barWidth, 18)];
+            bar.backgroundColor = [UIColor systemPinkColor];
+            bar.layer.cornerRadius = 2;
+            [self addSubview:bar];
+            [self.barViews addObject:bar];
+        }
+        
+        // Cử chỉ kéo thả hộp FPS
+        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+        [self addGestureRecognizer:pan];
+        
+        // DisplayLink cập nhật FPS và animation sóng âm liên tục
+        _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(updateLoop:)];
+        [_displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
     }
     return self;
 }
 
-- (void)setupWindow {
-    UIWindow *keyWindow = nil;
-    if (@available(iOS 13.0, *)) {
-        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
-            if (scene.activationState == UISceneActivationStateForegroundActive) {
-                for (UIWindow *window in scene.windows) {
-                    if (window.isKeyWindow) {
-                        keyWindow = window;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    if (!keyWindow) {
-        keyWindow = [UIApplication sharedApplication].keyWindow;
-    }
-    
-    UIWindowLevel level = keyWindow ? keyWindow.windowLevel + 1 : 999999.0;
-    
-    if (@available(iOS 13.0, *)) {
-        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
-            if (scene.activationState == UISceneActivationStateForegroundActive) {
-                overlayWindow = [[ModMenuWindow alloc] initWithWindowScene:scene];
-                break;
-            }
-        }
-    }
-    if (!overlayWindow) {
-        overlayWindow = [[ModMenuWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    }
-    
-    overlayWindow.windowLevel = level;
-    overlayWindow.backgroundColor = [UIColor clearColor];
-    overlayWindow.rootViewController = [[ModMenuViewController alloc] init];
-    overlayWindow.hidden = NO;
+- (void)handlePan:(UIPanGestureRecognizer *)gesture {
+    CGPoint translation = [gesture translationInView:self.superview];
+    CGPoint center = self.center;
+    self.center = CGPointMake(center.x + translation.x, center.y + translation.y);
+    [gesture setTranslation:CGPointZero inView:self.superview];
 }
 
-- (void)showMenu {
-    // Menu hiển thị tự động qua UIWindow và RootViewController
+- (void)updateLoop:(CADisplayLink *)link {
+    if (_lastTimestamp == 0) {
+        _lastTimestamp = link.timestamp;
+        return;
+    }
+    _frameCount++;
+    NSTimeInterval elapsed = link.timestamp - _lastTimestamp;
+    if (elapsed >= 1.0) {
+        NSInteger fps = (NSInteger)(_frameCount / elapsed);
+        self.fpsLabel.text = [NSString stringWithFormat:@"FPS: %ld", (long)fps];
+        _frameCount = 0;
+        _lastTimestamp = link.timestamp;
+    }
+    
+    // Hiệu ứng sóng âm nhảy theo nhạc
+    for (int i = 0; i < self.barViews.count; i++) {
+        UIView *bar = self.barViews[i];
+        CGFloat randomHeight = 4 + (arc4random_uniform(15));
+        CGRect frame = bar.frame;
+        frame.size.height = randomHeight;
+        frame.origin.y = 30 + (18 - randomHeight);
+        bar.frame = frame;
+    }
+}
+@end
+
+// --- 2. Giao diện chính chứa YouTube (Gần hết màn hình) ---
+@interface MainGUIViewController : UIViewController
+@property (nonatomic, strong) WKWebView *webView;
+@property (nonatomic, strong) UIButton *closeButton;
+@end
+
+@implementation MainGUIViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = [[UIColor darkGrayColor] colorWithAlphaComponent:0.95];
+    self.view.layer.cornerRadius = 16;
+    self.view.layer.borderWidth = 2;
+    self.view.layer.borderColor = [[UIColor systemIndigoColor] CGColor];
+    self.view.clipsToBounds = YES;
+    
+    // Tiêu đề GUI
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 15, 220, 30)];
+    titleLabel.text = @"YouTube Music HUD";
+    titleLabel.textColor = [UIColor whiteColor];
+    titleLabel.font = [UIFont boldSystemFontOfSize:18];
+    [self.view addSubview:titleLabel];
+    
+    // Nút đóng GUI (Nhạc vẫn chạy ngầm vì WebView chỉ bị ẩn, không bị huỷ)
+    self.closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.closeButton.frame = CGRectMake(self.view.frame.size.width - 50, 15, 30, 30);
+    [self.closeButton setTitle:@"✕" forState:UIControlStateNormal];
+    [self.closeButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    self.closeButton.titleLabel.font = [UIFont boldSystemFontOfSize:18];
+    [self.closeButton addTarget:self action:@selector(closeGUI) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.closeButton];
+    
+    // WKWebView chạy YouTube (Hỗ trợ phát nhạc nền)
+    WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+    config.allowsInlineMediaPlayback = YES;
+    if (@available(iOS 10.0, *)) {
+        config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
+    }
+    
+    CGFloat webY = 60;
+    self.webView = [[WKWebView alloc] initWithFrame:CGRectMake(10, webY, self.view.frame.size.width - 20, self.view.frame.size.height - webY - 10) configuration:config];
+    self.webView.layer.cornerRadius = 10;
+    self.webView.clipsToBounds = YES;
+    
+    NSURL *url = [NSURL URLWithString:@"https://www.youtube.com"];
+    NSURLRequest *request = [NSURLRequest requestWithURL:url];
+    [self.webView loadRequest:request];
+    [self.view addSubview:self.webView];
+}
+
+- (void)closeGUI {
+    // Ẩn container chứa GUI, nhạc bên trong WebView tiếp tục phát ngầm
+    self.view.superview.hidden = YES;
 }
 
 @end
 
-__attribute__((constructor)) static void initModMenu() {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [ModMenuManager sharedInstance];
+// --- 3. Quản lý hiển thị và Nút bật/tắt chính ---
+@interface TweakManager ()
+@property (nonatomic, strong) UIButton *toggleButton;
+@property (nonatomic, strong) UIView *mainContainerView;
+@property (nonatomic, strong) MainGUIViewController *mainVC;
+@property (nonatomic, strong) FPSVisualizerView *fpsView;
+@end
+
+@implementation TweakManager
+
++ (instancetype)sharedInstance {
+    static TweakManager *sharedInstance = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        sharedInstance = [[TweakManager alloc] init];
     });
+    return sharedInstance;
+}
+
+- (void)setupUI {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+        if (!keyWindow) return;
+        
+        // Nút tròn nổi bật tắt/mở GUI
+        self.toggleButton = [UIButton buttonWithType:UIButtonTypeCustom];
+        self.toggleButton.frame = CGRectMake(20, 120, 50, 50);
+        self.toggleButton.backgroundColor = [UIColor systemBlueColor];
+        [self.toggleButton setTitle:@"YT" forState:UIControlStateNormal];
+        [self.toggleButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        self.toggleButton.titleLabel.font = [UIFont boldSystemFontOfSize:16];
+        self.toggleButton.layer.cornerRadius = 25;
+        self.toggleButton.layer.shadowColor = [[UIColor blackColor] CGColor];
+        self.toggleButton.layer.shadowOpacity = 0.5;
+        self.toggleButton.layer.shadowOffset = CGSizeMake(0, 2);
+        [self.toggleButton addTarget:self action:@selector(toggleMainGUI) forControlEvents:UIControlEventTouchUpInside];
+        
+        // Cho phép kéo nút bật/tắt đi quanh màn hình
+        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleTogglePan:)];
+        [self.toggleButton addGestureRecognizer:pan];
+        [keyWindow addSubview:self.toggleButton];
+        
+        // Main GUI (Gần hết màn hình: Cách mép 20px mỗi bên)
+        CGRect screenRect = [UIScreen mainScreen].bounds;
+        CGFloat guiW = screenRect.size.width - 40;
+        CGFloat guiH = screenRect.size.height - 100;
+        
+        self.mainContainerView = [[UIView alloc] initWithFrame:CGRectMake(20, 50, guiW, guiH)];
+        self.mainContainerView.hidden = YES; // Mặc định ẩn
+        
+        self.mainVC = [[MainGUIViewController alloc] init];
+        self.mainVC.view.frame = self.mainContainerView.bounds;
+        [self.mainContainerView addSubview:self.mainVC.view];
+        [keyWindow addSubview:self.mainContainerView];
+        
+        // Hộp FPS và sóng âm nhỏ gọn, góc phải màn hình
+        self.fpsView = [[FPSVisualizerView alloc] initWithFrame:CGRectMake(screenRect.size.width - 130, 120, 110, 55)];
+        [keyWindow addSubview:self.fpsView];
+    });
+}
+
+- (void)toggleMainGUI {
+    self.mainContainerView.hidden = !self.mainContainerView.hidden;
+}
+
+- (void)handleTogglePan:(UIPanGestureRecognizer *)gesture {
+    CGPoint translation = [gesture translationInView:gesture.view.superview];
+    CGPoint center = gesture.view.center;
+    gesture.view.center = CGPointMake(center.x + translation.x, center.y + translation.y);
+    [gesture setTranslation:CGPointZero inView:gesture.view.superview];
+}
+
+@end
+
+// Điểm khởi chạy tự động khi file dylib được nạp vào game
+__attribute__((constructor)) static void initTweak() {
+    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
+                                                      object:nil
+                                                       queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(NSNotification * _Nonnull note) {
+        [[TweakManager sharedInstance] setupUI];
+    }];
 }
