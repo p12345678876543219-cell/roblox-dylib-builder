@@ -9,15 +9,14 @@
 @implementation RobloxNeonMenu {
     UIButton *floatBtn;
     UIView *menuView;
-    UILabel *fpsLabel;
-    UILabel *clockLabel;
-    UILabel *ipLabel;
-    UILabel *pingLabel;
-    CADisplayLink *displayLink;
-    CFTimeInterval lastTime;
-    int frameCount;
+    UIView *tab1View;
+    UIView *tab2View;
     WKWebView *webView;
-    UIView *browserContainer;
+    UITextView *scriptTextView;
+    UISegmentedControl *segmentedControl;
+    UIButton *closeBtn;
+    UIButton *execBtn;
+    UIButton *clearBtn;
 }
 
 + (instancetype)sharedInstance {
@@ -33,6 +32,7 @@
     self = [super init];
     if (self) {
         [self performSelectorOnMainThread:@selector(setupFloatingButton) withObject:nil waitUntilDone:NO];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(orientationDidChange) name:UIDeviceOrientationDidChangeNotification object:nil];
     }
     return self;
 }
@@ -82,8 +82,6 @@
         } completion:^(BOOL finished) {
             [menuView removeFromSuperview];
             menuView = nil;
-            [displayLink invalidate];
-            displayLink = nil;
         }];
     } else {
         [self createMenuUI];
@@ -94,10 +92,14 @@
     UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
     if (!keyWindow) return;
 
-    CGFloat w = 320;
-    CGFloat h = 440;
-    CGFloat x = (keyWindow.bounds.size.width - w) / 2;
-    CGFloat y = (keyWindow.bounds.size.height - h) / 2;
+    CGSize screenSize = keyWindow.bounds.size;
+    BOOL isLandscape = screenSize.width > screenSize.height;
+
+    // Tự động chỉnh kích thước khung theo chiều ngang (landscape) hoặc dọc (portrait)
+    CGFloat w = isLandscape ? 500 : 320;
+    CGFloat h = isLandscape ? 280 : 420;
+    CGFloat x = (screenSize.width - w) / 2;
+    CGFloat y = (screenSize.height - h) / 2;
 
     menuView = [[UIView alloc] initWithFrame:CGRectMake(x, y, w, h)];
     menuView.backgroundColor = [UIColor colorWithRed:0.06 green:0.01 blue:0.10 alpha:0.95];
@@ -111,170 +113,143 @@
     menuView.alpha = 0;
 
     // Title
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 12, w - 50, 30)];
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 10, 180, 25)];
     titleLabel.text = @"ROBLOX NEON MENU";
     titleLabel.textColor = [UIColor colorWithRed:0.85 green:0.45 blue:1.0 alpha:1.0];
-    titleLabel.font = [UIFont boldSystemFontOfSize:16];
+    titleLabel.font = [UIFont boldSystemFontOfSize:14];
     [menuView addSubview:titleLabel];
 
     // Close Button
-    UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-        closeBtn.frame = CGRectMake(w - 40, 12, 28, 28);
-
+    closeBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+    closeBtn.frame = CGRectMake(w - 35, 8, 25, 25);
     [closeBtn setTitle:@"✕" forState:UIControlStateNormal];
     [closeBtn setTitleColor:[UIColor redColor] forState:UIControlStateNormal];
     closeBtn.titleLabel.font = [UIFont boldSystemFontOfSize:16];
     [closeBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
     [menuView addSubview:closeBtn];
 
-    // Divider
-    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, 48, w - 30, 1)];
-    line.backgroundColor = [UIColor systemPurpleColor];
-    [menuView addSubview:line];
+    // Segmented Control (Tabs)
+    NSArray *itemArray = @[@"Trình Duyệt Chrome", @"Executor Script"];
+    segmentedControl = [[UISegmentedControl alloc] initWithItems:itemArray];
+    segmentedControl.frame = CGRectMake(15, 38, w - 30, 30);
+    segmentedControl.selectedSegmentIndex = 0;
+    [segmentedControl addTarget:self action:@selector(tabChanged:) forControlEvents:UIControlEventValueChanged];
+    segmentedControl.selectedSegmentTintColor = [UIColor systemPurpleColor];
+    [segmentedControl setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor]} forState:UIControlStateSelected];
+    [segmentedControl setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor lightGrayColor]} forState:UIControlStateNormal];
+    [menuView addSubview:segmentedControl];
 
-    CGFloat startY = 60;
+    // Content Container
+    CGFloat contentW = w - 30;
+    CGFloat contentH = h - 80;
+    CGRect contentRect = CGRectMake(15, 75, contentW, contentH);
 
-    // 1. FPS Label
-    fpsLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, startY, w - 40, 25)];
-    fpsLabel.textColor = [UIColor whiteColor];
-    fpsLabel.font = [UIFont systemFontOfSize:14];
-    fpsLabel.text = @"FPS: Đang tính...";
-    [menuView addSubview:fpsLabel];
+    // Tab 1: Chrome Browser
+    tab1View = [[UIView alloc] initWithFrame:contentRect];
+    WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+    webView = [[WKWebView alloc] initWithFrame:tab1View.bounds configuration:config];
+    webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:@"https://www.google.com"]];
+    [webView loadRequest:request];
+    [tab1View addSubview:webView];
+    [menuView addSubview:tab1View];
 
-    // 2. Clock Label
-    clockLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, startY + 30, w - 40, 25)];
-    clockLabel.textColor = [UIColor whiteColor];
-    clockLabel.font = [UIFont systemFontOfSize:14];
-    [menuView addSubview:clockLabel];
-    [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(updateClock) userInfo:nil repeats:YES];
-    [self updateClock];
+    // Tab 2: Executor Script
+    tab2View = [[UIView alloc] initWithFrame:contentRect];
+    tab2View.hidden = YES;
 
-    // 3. IP Address Label
-    ipLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, startY + 60, w - 40, 25)];
-    ipLabel.textColor = [UIColor whiteColor];
-    ipLabel.font = [UIFont systemFontOfSize:14];
-    ipLabel.text = @"IP: Đang tải...";
-    [menuView addSubview:ipLabel];
-    [self fetchIPAddress];
+    scriptTextView = [[UITextView alloc] initWithFrame:CGRectMake(0, 0, contentW, contentH - 42)];
+    scriptTextView.backgroundColor = [UIColor colorWithRed:0.03 green:0.00 blue:0.05 alpha:1.0];
+    scriptTextView.textColor = [UIColor greenColor];
+    scriptTextView.font = [UIFont fontWithName:@"Courier" size:13] ?: [UIFont systemFontOfSize:13];
+    scriptTextView.layer.borderColor = [UIColor systemPurpleColor].CGColor;
+    scriptTextView.layer.borderWidth = 1.0;
+    scriptTextView.layer.cornerRadius = 6.0;
+    scriptTextView.text = @"-- Nhập script Luau của bạn ở đây\nprint(\"Hello from Neon Menu!\")";
+    [tab2View addSubview:scriptTextView];
 
-    // 4. Ping Label
-    pingLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, startY + 90, w - 40, 25)];
-    pingLabel.textColor = [UIColor whiteColor];
-    pingLabel.font = [UIFont systemFontOfSize:14];
-    pingLabel.text = @"Ping: Đang đo...";
-    [menuView addSubview:pingLabel];
-    [self measurePing];
+    CGFloat btnW = (contentW - 10) / 2;
+    execBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    execBtn.frame = CGRectMake(0, contentH - 36, btnW, 34);
+    execBtn.backgroundColor = [UIColor colorWithRed:0.3 green:0.05 blue:0.5 alpha:1.0];
+    [execBtn setTitle:@"Execute" forState:UIControlStateNormal];
+    [execBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    execBtn.titleLabel.font = [UIFont boldSystemFontOfSize:13];
+    execBtn.layer.cornerRadius = 6;
+    [execBtn addTarget:self action:@selector(executeScript) forControlEvents:UIControlEventTouchUpInside];
+    [tab2View addSubview:execBtn];
 
-    // 5. Chrome Browser Button
-    UIButton *browserBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    browserBtn.frame = CGRectMake(20, startY + 130, w - 40, 42);
-    browserBtn.backgroundColor = [UIColor colorWithRed:0.25 green:0.05 blue:0.45 alpha:0.9];
-    [browserBtn setTitle:@"Mở Trình Duyệt Chrome (Mini)" forState:UIControlStateNormal];
-    [browserBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    browserBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
-    browserBtn.layer.cornerRadius = 8;
-    browserBtn.layer.borderColor = [UIColor systemPurpleColor].CGColor;
-    browserBtn.layer.borderWidth = 1.0;
-    [browserBtn addTarget:self action:@selector(openBrowser) forControlEvents:UIControlEventTouchUpInside];
-    [menuView addSubview:browserBtn];
+    clearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    clearBtn.frame = CGRectMake(btnW + 10, contentH - 36, btnW, 34);
+    clearBtn.backgroundColor = [UIColor colorWithRed:0.4 green:0.1 blue:0.1 alpha:1.0];
+    [clearBtn setTitle:@"Clear" forState:UIControlStateNormal];
+    [clearBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    clearBtn.titleLabel.font = [UIFont boldSystemFontOfSize:13];
+    clearBtn.layer.cornerRadius = 6;
+    [clearBtn addTarget:self action:@selector(clearScript) forControlEvents:UIControlEventTouchUpInside];
+    [tab2View addSubview:clearBtn];
 
+    [menuView addSubview:tab2View];
     [keyWindow addSubview:menuView];
 
     [UIView animateWithDuration:0.25 animations:^{
         menuView.alpha = 1.0;
         menuView.transform = CGAffineTransformIdentity;
     }];
-
-    displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(tickFPS:)];
-    [displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 }
 
-- (void)tickFPS:(CADisplayLink *)link {
-    if (lastTime == 0) {
-        lastTime = link.timestamp;
-        return;
-    }
-    frameCount++;
-    CFTimeInterval elapsed = link.timestamp - lastTime;
-    if (elapsed >= 1.0) {
-        int fps = (int)(frameCount / elapsed);
-        fpsLabel.text = [NSString stringWithFormat:@"FPS: %d", fps];
-        frameCount = 0;
-        lastTime = link.timestamp;
+- (void)tabChanged:(UISegmentedControl *)sender {
+    if (sender.selectedSegmentIndex == 0) {
+        tab1View.hidden = NO;
+        tab2View.hidden = YES;
+    } else {
+        tab1View.hidden = YES;
+        tab2View.hidden = NO;
     }
 }
 
-- (void)updateClock {
-    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-    [formatter setDateFormat:@"HH:mm:ss - dd/MM/yyyy"];
-    clockLabel.text = [NSString stringWithFormat:@"Thời gian: %@", [formatter stringFromDate:[NSDate date]]];
+- (void)executeScript {
+    if (scriptTextView.text.length > 0) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Executor" message:@"Đã gửi lệnh thực thi script!" preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+        [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+    }
 }
 
-- (void)fetchIPAddress {
-    NSURL *url = [NSURL URLWithString:@"https://api.ipify.org"];
-    NSURLRequest *request = [NSURLRequest requestWithURL:url];
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
-        if (data && !error) {
-            NSString *ip = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (ip) {
-                    ipLabel.text = [NSString stringWithFormat:@"IP: %@", [ip stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]];
-                }
-            });
-        } else {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                ipLabel.text = @"IP: Không tải được";
-            });
-        }
-    }];
-    [task resume];
+- (void)clearScript {
+    scriptTextView.text = @"";
 }
 
-- (void)measurePing {
-    NSDate *start = [NSDate date];
-    NSURL *url = [NSURL URLWithString:@"https://www.google.com"];
-    NSURLRequest *request = [NSURLRequest requestWithURL:url];
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
-        NSTimeInterval latency = [[NSDate date] timeIntervalSinceDate:start] * 1000;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            pingLabel.text = [NSString stringWithFormat:@"Ping: %.0f ms", latency];
-        });
-    }];
-    [task resume];
-}
+- (void)orientationDidChange {
+    if (!menuView || !menuView.superview) return;
+    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+    if (!keyWindow) return;
 
-- (void)openBrowser {
-    if (browserContainer && browserContainer.superview) return;
+    CGSize screenSize = keyWindow.bounds.size;
+    BOOL isLandscape = screenSize.width > screenSize.height;
 
-    CGFloat w = menuView.bounds.size.width - 20;
-    CGFloat h = 185;
-    browserContainer = [[UIView alloc] initWithFrame:CGRectMake(10, 230, w, h)];
-    browserContainer.backgroundColor = [UIColor blackColor];
-    browserContainer.layer.borderColor = [UIColor systemPurpleColor].CGColor;
-    browserContainer.layer.borderWidth = 1.0;
-    browserContainer.layer.cornerRadius = 8.0;
-    browserContainer.clipsToBounds = YES;
+    CGFloat w = isLandscape ? 500 : 320;
+    CGFloat h = isLandscape ? 280 : 420;
+    CGFloat x = (screenSize.width - w) / 2;
+    CGFloat y = (screenSize.height - h) / 2;
 
-    WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
-    webView = [[WKWebView alloc] initWithFrame:CGRectMake(0, 30, w, h - 30) configuration:config];
-    NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:@"https://www.google.com"]];
-    [webView loadRequest:request];
-    [browserContainer addSubview:webView];
+    menuView.frame = CGRectMake(x, y, w, h);
 
-    UIButton *closeBrowserBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    closeBrowserBtn.frame = CGRectMake(w - 55, 2, 50, 26);
-    [closeBrowserBtn setTitle:@"Đóng" forState:UIControlStateNormal];
-    [closeBrowserBtn setTitleColor:[UIColor redColor] forState:UIControlStateNormal];
-    [closeBrowserBtn addTarget:self action:@selector(closeBrowser) forControlEvents:UIControlEventTouchUpInside];
-    [browserContainer addSubview:closeBrowserBtn];
+    CGFloat contentW = w - 30;
+    CGFloat contentH = h - 80;
+    CGRect contentRect = CGRectMake(15, 75, contentW, contentH);
 
-    [menuView addSubview:browserContainer];
-}
+    tab1View.frame = contentRect;
+    tab2View.frame = contentRect;
+    scriptTextView.frame = CGRectMake(0, 0, contentW, contentH - 42);
 
-- (void)closeBrowser {
-    [browserContainer removeFromSuperview];
-    browserContainer = nil;
-    webView = nil;
+    CGFloat btnW = (contentW - 10) / 2;
+    execBtn.frame = CGRectMake(0, contentH - 36, btnW, 34);
+    clearBtn.frame = CGRectMake(btnW + 10, contentH - 36, btnW, 34);
+
+    closeBtn.frame = CGRectMake(w - 35, 8, 25, 25);
+    segmentedControl.frame = CGRectMake(15, 38, w - 30, 30);
 }
 
 @end
