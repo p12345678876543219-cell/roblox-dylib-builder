@@ -311,7 +311,8 @@
 - (void)toggleFPS:(UISwitch *)sender {
     if (sender.isOn) {
         if (@available(iOS 10.0, *)) {
-            [UIScreen mainScreen].maximumFramesPerSecond = 144;
+            // [UIScreen mainScreen].maximumFramesPerSecond = 144; // Thuộc tính này là readonly trên SDK mới
+
         }
         
         UIWindow *keyWindow = [self getCurrentKeyWindow];
