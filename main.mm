@@ -1,14 +1,5 @@
 #import <UIKit/UIKit.h>
-
-// Khai báo nguyên mẫu thay thế cho #import <substrate.h> để tương thích hoàn toàn với GitHub Actions (clang thuần)
-#ifdef __cplusplus
-extern "C" {
-#endif
-    void MSHookFunction(void *symbol, void *replace, void **result);
-    void *MSFindSymbol(void *image, const char *name);
-#ifdef __cplusplus
-}
-#endif
+#import <dlfcn.h>
 
 // Quản lý toàn bộ giao diện Mod Menu
 @interface ModMenuController : NSObject
@@ -190,28 +181,22 @@ extern "C" {
 @end
 
 // ==========================================
-// SPEED HACK HOOK (Dành cho game Unity như Subway Surfers)
+// SPEED HACK (Dành cho game Unity như Subway Surfers)
 // ==========================================
-typedef void (*Time_set_timeScale_t)(float);
-static Time_set_timeScale_t orig_Time_set_timeScale = NULL;
+typedef void (*UnitySetTimeScale_func)(float);
+static UnitySetTimeScale_func s_UnitySetTimeScale = NULL;
 
-void hooked_Time_set_timeScale(float value) {
-    ModMenuController *menu = [ModMenuController sharedInstance];
-    if (menu.speedEnabled) {
-        orig_Time_set_timeScale(menu.gameSpeed);
-    } else {
-        orig_Time_set_timeScale(value);
-    }
-}
-
-// Constructor khởi chạy tự động khi dylib được load vào ứng dụng
 __attribute__((constructor)) static void entry() {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [[ModMenuController sharedInstance] setupUI];
+        
+        s_UnitySetTimeScale = (UnitySetTimeScale_func)dlsym(RTLD_DEFAULT, "UnitySetTimeScale");
+        
+        [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer * _Nonnull timer) {
+            ModMenuController *menu = [ModMenuController sharedInstance];
+            if (menu.speedEnabled && s_UnitySetTimeScale) {
+                s_UnitySetTimeScale(menu.gameSpeed);
+            }
+        }];
     });
-
-    void *timeScaleSymbol = MSFindSymbol(NULL, "_UnitySetTimeScale");
-    if (timeScaleSymbol) {
-        MSHookFunction(timeScaleSymbol, (void *)&hooked_Time_set_timeScale, (void **)&orig_Time_set_timeScale);
-    }
 }
