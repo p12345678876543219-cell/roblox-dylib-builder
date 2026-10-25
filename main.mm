@@ -164,7 +164,7 @@
     [menuView addGestureRecognizer:menuPan];
 
     UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 10, 200, 25)];
-    titleLabel.text = @"DELTA TIKTOK (MOD)";
+    titleLabel.text = @"DELTA TIKTOK (PC)";
     titleLabel.textColor = [UIColor colorWithRed:0.85 green:0.45 blue:1.0 alpha:1.0];
     titleLabel.font = [UIFont boldSystemFontOfSize:14];
     [menuView addSubview:titleLabel];
@@ -177,7 +177,7 @@
     [closeBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
     [menuView addSubview:closeBtn];
 
-    NSArray *itemArray = @[@"Trình Duyệt Chrome", @"TikTok"];
+    NSArray *itemArray = @[@"Trình Duyệt Chrome", @"TikTok PC"];
     segmentedControl = [[UISegmentedControl alloc] initWithItems:itemArray];
     segmentedControl.frame = CGRectMake(15, 40, w - 30, 32);
     segmentedControl.selectedSegmentIndex = 1;
@@ -202,7 +202,7 @@
     [tab1View addSubview:webView];
     [menuView addSubview:tab1View];
 
-    // Tab 2: TikTok Viewer
+    // Tab 2: TikTok PC Viewer
     tab2View = [[UIView alloc] initWithFrame:contentRect];
     tab2View.hidden = NO;
 
@@ -212,6 +212,10 @@
 
     tikTokWebView = [[WKWebView alloc] initWithFrame:tab2View.bounds configuration:tkConfig];
     tikTokWebView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    
+    // Ép kiểu User-Agent thành trình duyệt PC (Macintosh) để mở giao diện TikTok PC
+    tikTokWebView.customUserAgent = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15";
+
     NSURLRequest *tkRequest = [NSURLRequest requestWithURL:[NSURL URLWithString:@"https://www.tiktok.com"]];
     [tikTokWebView loadRequest:tkRequest];
     [tab2View addSubview:tikTokWebView];
