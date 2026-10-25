@@ -104,7 +104,7 @@ extern "C" {
 
         // Nút Giảm Tốc Độ (-)
         UIButton *minusBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-        minusBtn.frame = CGRectMake(20, 110, 50, 40];
+        minusBtn.frame = CGRectMake(20, 110, 50, 40);
         [minusBtn setTitle:@"-" forState:UIControlStateNormal];
         minusBtn.titleLabel.font = [UIFont boldSystemFontOfSize:22];
         [minusBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
@@ -123,7 +123,7 @@ extern "C" {
 
         // Nút Tăng Tốc Độ (+)
         UIButton *plusBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-        plusBtn.frame = CGRectMake(190, 110, 50, 40];
+        plusBtn.frame = CGRectMake(190, 110, 50, 40);
         [plusBtn setTitle:@"+" forState:UIControlStateNormal];
         plusBtn.titleLabel.font = [UIFont boldSystemFontOfSize:22];
         [plusBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
@@ -134,7 +134,7 @@ extern "C" {
 
         // Nút Đóng / Ẩn Menu
         UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-        closeBtn.frame = CGRectMake(20, 175, 220, 38];
+        closeBtn.frame = CGRectMake(20, 175, 220, 38);
         [closeBtn setTitle:@"Ẩn Menu" forState:UIControlStateNormal];
         [closeBtn setTitleColor:[UIColor redColor] forState:UIControlStateNormal];
         closeBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
