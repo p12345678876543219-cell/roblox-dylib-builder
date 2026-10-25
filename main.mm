@@ -2,12 +2,6 @@
 #import <WebKit/WebKit.h>
 #import <QuartzCore/QuartzCore.h>
 
-@interface TweakManager : NSObject
-+ (instancetype)sharedInstance;
-- (void)setupUI;
-- (void)updateAudioVisualizerLevel:(CGFloat)level;
-@end
-
 // --- 1. Hộp FPS nhỏ gọn, di chuyển được & Sóng âm đồng bộ nhạc YouTube ---
 @interface FPSVisualizerView : UIView
 @property (nonatomic, strong) UILabel *fpsLabel;
@@ -31,7 +25,6 @@
         self.layer.borderColor = [[UIColor cyanColor] CGColor];
         self.clipsToBounds = YES;
         
-        // Nhãn FPS
         self.fpsLabel = [[UILabel alloc] initWithFrame:CGRectMake(5, 5, frame.size.width - 10, 20)];
         self.fpsLabel.textColor = [UIColor greenColor];
         self.fpsLabel.font = [UIFont boldSystemFontOfSize:12];
@@ -39,7 +32,6 @@
         self.fpsLabel.text = @"FPS: 60";
         [self addSubview:self.fpsLabel];
         
-        // Các thanh sóng âm
         CGFloat barWidth = 4;
         CGFloat spacing = 3;
         int numBars = 5;
@@ -54,11 +46,9 @@
             [self.barViews addObject:bar];
         }
         
-        // Kéo thả hộp FPS
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         [self addGestureRecognizer:pan];
         
-        // Đo FPS liên tục
         _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(updateLoop:)];
         [_displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
     }
@@ -88,13 +78,12 @@
 }
 
 - (void)updateBarsWithLevel:(CGFloat)level {
-    _currentLevel = level; // Nhận mức độ âm thanh từ WebView gửi sang
+    _currentLevel = level;
     for (int i = 0; i < self.barViews.count; i++) {
         UIView *bar = self.barViews[i];
-        // Tính chiều cao thanh dựa vào âm lượng thực tế kết hợp hiệu ứng dập dờn ngẫu nhiên theo nhịp
         CGFloat dynamicHeight = 4 + (_currentLevel / 255.0) * 14 + (arc4random_uniform(6));
         if (dynamicHeight > 20) dynamicHeight = 20;
-        if (_currentLevel <= 1.0) dynamicHeight = 4; // Khi dừng nhạc thì các thanh thu nhỏ lại
+        if (_currentLevel <= 1.0) dynamicHeight = 4;
         
         CGRect frame = bar.frame;
         frame.size.height = dynamicHeight;
@@ -104,7 +93,19 @@
 }
 @end
 
-// --- 2. Giao diện chính chứa YouTube tích hợp JS Bridge ---
+// --- 2. Khai báo trước TweakManager để các class khác nhận diện ---
+@interface TweakManager : NSObject
+@property (nonatomic, strong) UIButton *toggleButton;
+@property (nonatomic, strong) UIView *mainContainerView;
+@property (nonatomic, strong) id mainVC;
+@property (nonatomic, strong) FPSVisualizerView *fpsView;
+
++ (instancetype)sharedInstance;
+- (void)setupUI;
+- (void)updateAudioVisualizerLevel:(CGFloat)level;
+@end
+
+// --- 3. Giao diện chính chứa YouTube tích hợp JS Bridge ---
 @interface MainGUIViewController : UIViewController <WKScriptMessageHandler>
 @property (nonatomic, strong) WKWebView *webView;
 @property (nonatomic, strong) UIButton *closeButton;
@@ -126,7 +127,6 @@
     titleLabel.font = [UIFont boldSystemFontOfSize:18];
     [self.view addSubview:titleLabel];
     
-    // Nút ĐÓNG màu đỏ to bản dễ bấm
     self.closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
     self.closeButton.frame = CGRectMake(self.view.frame.size.width - 90, 12, 75, 32);
     [self.closeButton setTitle:@"ĐÓNG ✕" forState:UIControlStateNormal];
@@ -137,7 +137,6 @@
     [self.closeButton addTarget:self action:@selector(closeGUI) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.closeButton];
     
-    // Cấu hình WKWebView và tiêm Script đo âm thanh từ thẻ <video> của YouTube
     WKUserContentController *userController = [[WKUserContentController alloc] init];
     [userController addScriptMessageHandler:self name:@"audioSync"];
     
@@ -148,7 +147,6 @@
         config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     }
     
-    // Đoạn script JS tự động chạy ngầm trong trang YouTube để lấy trạng thái âm thanh và gửi về Native
     NSString *jsSource = @" \
         (function() { \
             setInterval(function() { \
@@ -176,7 +174,6 @@
     [self.view addSubview:self.webView];
 }
 
-// Nhận dữ liệu âm thanh từ WebView truyền sang để cập nhật sóng âm
 - (void)userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message {
     if ([message.name isEqualToString:@"audioSync"]) {
         CGFloat level = [message.body floatValue];
@@ -184,21 +181,13 @@
     }
 }
 
-- - (void)closeGUI {
-    // Ẩn bảng GUI, nhạc YouTube vẫn chạy ngầm bên dưới
+- (void)closeGUI {
     self.view.superview.hidden = YES;
 }
 
 @end
 
-// --- 3. Quản lý hiển thị toàn cục ---
-@interface TweakManager ()
-@property (nonatomic, strong) UIButton *toggleButton;
-@property (nonatomic, strong) UIView *mainContainerView;
-@property (nonatomic, strong) MainGUIViewController *mainVC;
-@property (nonatomic, strong) FPSVisualizerView *fpsView;
-@end
-
+// --- 4. Quản lý hiển thị toàn cục ---
 @implementation TweakManager
 
 + (instancetype)sharedInstance {
@@ -215,7 +204,6 @@
         UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
         if (!keyWindow) return;
         
-        // Nút tròn nổi bật bật/mở GUI
         self.toggleButton = [UIButton buttonWithType:UIButtonTypeCustom];
         self.toggleButton.frame = CGRectMake(20, 120, 50, 50);
         self.toggleButton.backgroundColor = [UIColor systemBlueColor];
@@ -232,7 +220,6 @@
         [self.toggleButton addGestureRecognizer:pan];
         [keyWindow addSubview:self.toggleButton];
         
-        // Main GUI (Gần hết màn hình)
         CGRect screenRect = [UIScreen mainScreen].bounds;
         CGFloat guiW = screenRect.size.width - 40;
         CGFloat guiH = screenRect.size.height - 100;
@@ -240,12 +227,12 @@
         self.mainContainerView = [[UIView alloc] initWithFrame:CGRectMake(20, 50, guiW, guiH)];
         self.mainContainerView.hidden = YES;
         
-        self.mainVC = [[MainGUIViewController alloc] init];
-        self.mainVC.view.frame = self.mainContainerView.bounds;
-        [self.mainContainerView addSubview:self.mainVC.view];
+        MainGUIViewController *mainVC = [[MainGUIViewController alloc] init];
+        self.mainVC = mainVC;
+        mainVC.view.frame = self.mainContainerView.bounds;
+        [self.mainContainerView addSubview:mainVC.view];
         [keyWindow addSubview:self.mainContainerView];
         
-        // Hộp FPS kết hợp sóng âm đồng bộ nhạc
         self.fpsView = [[FPSVisualizerView alloc] initWithFrame:CGRectMake(screenRect.size.width - 130, 120, 110, 55)];
         [keyWindow addSubview:self.fpsView];
     });
@@ -274,5 +261,5 @@ __attribute__((constructor)) static void initTweak() {
                                                        queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification * _Nonnull note) {
         [[TweakManager sharedInstance] setupUI];
-    }];
+    });
 }
