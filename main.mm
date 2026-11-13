@@ -13,8 +13,10 @@ void sendDataToAI(NSString *apiKey, NSString *prompt);
 
 // Class xử lý cử chỉ kéo thả (Drag) nút nổi
 @interface AITouchHandler : NSObject
-+atomy void handlePan:(UIPanGestureRecognizer *)gesture;
++ (void)handlePan:(UIPanGestureRecognizer *)gesture;
 + (void)onButtonClicked;
++ (void)onSwitchChanged:(UISwitch *)sender;
++ (void)onSaveClicked;
 @end
 
 @implementation AITouchHandler
@@ -132,7 +134,8 @@ void setupUI() {
         menuView.backgroundColor = [UIColor colorWithWhite:0.12 alpha:0.95];
         menuView.layer.cornerRadius = 14;
         menuView.layer.borderWidth = 1;
-        menuView.layer.borderColor = [UIColor colorWithWhite:0.3 alpha:1.0];
+        // Đã sửa lỗi thiếu .CGColor ở đây
+        menuView.layer.borderColor = [UIColor colorWithWhite:0.3 alpha:1.0].CGColor;
         menuView.hidden = YES; // Mặc định ẩn, bấm nút nổi mới hiện
         
         // Tiêu đề
