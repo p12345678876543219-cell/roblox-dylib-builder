@@ -1,201 +1,237 @@
+#import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <mach-o/dyld.h>
+#include <dlfcn.h>
+#include <string>
+#include <fstream>
 
-static UIButton *floatingBtn = nil;
-static UIView *menuView = nil;
-static UISwitch *aiSwitch = nil;
-static UITextField *apiKeyField = nil;
-static BOOL isAIControlled = NO;
+// ==========================================
+// 1. HELPER: LẤY THÔNG TIN MINECRAFT PE
+// ==========================================
 
-// Khai báo trước các hàm
-void setupUI(void);
-void toggleMenu(void);
-void sendDataToAI(NSString *apiKey, NSString *prompt);
+// Lấy phiên bản Minecraft từ Info.plist của ứng dụng
+NSString* GetMinecraftVersion() {
+    NSDictionary *infoDict = [[NSBundle mainBundle] infoDictionary];
+    NSString *shortVersion = infoDict[@"CFBundleShortVersionString"];
+    NSString *buildVersion = infoDict[@"CFBundleVersion"];
+    if (shortVersion) {
+        return [NSString stringWithFormat:@"%@ (Build %@)", shortVersion, buildVersion ?: @"N/A"];
+    }
+    return @"Không xác định";
+}
 
-// Class xử lý cử chỉ kéo thả (Drag) nút nổi
-@interface AITouchHandler : NSObject
-+ (void)handlePan:(UIPanGestureRecognizer *)gesture;
-+ (void)onButtonClicked;
-+ (void)onSwitchChanged:(UISwitch *)sender;
-+ (void)onSaveClicked;
+// Đọc tên người chơi từ file options.txt của Minecraft PE trên iOS
+NSString* GetMinecraftPlayerName() {
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    NSString *documentsDirectory = [paths firstObject];
+    
+    // Đường dẫn chuẩn lưu cấu hình của Minecraft Bedrock iOS
+    NSString *optionsPath = [documentsDirectory stringByAppendingPathComponent:@"games/com.mojang/minecraftpe/options.txt"];
+    
+    if ([[NSFileManager defaultManager] fileExistsAtPath:optionsPath]) {
+        NSError *error = nil;
+        NSString *content = [NSString stringWithContentsOfFile:optionsPath encoding:NSUTF8StringEncoding error:&error];
+        if (content && !error) {
+            NSArray *lines = [content componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+            for (NSString *line in lines) {
+                if ([line hasPrefix:@"mp_username:"]) {
+                    NSString *name = [line substringFromIndex:12];
+                    if (name.length > 0) return name;
+                }
+            }
+        }
+    }
+    return @"Steve (Chưa đăng nhập / Offline)";
+}
+
+// ==========================================
+// 2. HOOK ENGINE (CƠ BẢN CHO MCPE)
+// ==========================================
+
+uintptr_t GetBaseAddress() {
+    return (uintptr_t)_dyld_get_image_vmaddr_slide(0);
+}
+
+// Ví dụ hàm Hook C++ bằng Substrate / Dobby (nếu link thư viện) hoặc patch memory trực tiếp
+void InitMinecraftHooks() {
+    uintptr_t baseAddr = GetBaseAddress();
+    NSLog(@"[MCPE Hook] Base Address minecraftpe: 0x%lx", baseAddr);
+    
+    // Bạn có thể đặt offset hàm của Minecraft PE tại đây để hook
+    // Ví dụ: uintptr_t getPlayerNameOffset = baseAddr + 0x1234567;
+}
+
+// ==========================================
+// 3. GIAO DIỆN MENU & NÚT NỔI (UI OVERLAY)
+// ==========================================
+
+@interface MCPEFloatingMenu : NSObject
+@property (nonatomic, strong) UIButton *toggleButton;
+@property (nonatomic, strong) UIView *menuContainer;
+@property (nonatomic, strong) UILabel *playerLabel;
+@property (nonatomic, strong) UILabel *versionLabel;
+@property (nonatomic, assign) BOOL isMenuVisible;
++ (instancetype)sharedInstance;
+- (void)setupUI;
 @end
 
-@implementation AITouchHandler
-+ (void)handlePan:(UIPanGestureRecognizer *)gesture {
-    UIView *btn = gesture.view;
-    CGPoint translation = [gesture translationInView:btn.superview];
-    
-    btn.center = CGPointMake(btn.center.x + translation.x, btn.center.y + translation.y);
-    [gesture setTranslation:CGPointZero inView:btn.superview];
-    
-    // Ghim menu đi theo nút nổi
-    if (menuView) {
-        menuView.center = CGPointMake(btn.center.x, btn.center.y + 110);
-    }
+@implementation MCPEFloatingMenu
+
++ (instancetype)sharedInstance {
+    static MCPEFloatingMenu *instance = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        instance = [[MCPEFloatingMenu alloc] init];
+    });
+    return instance;
 }
 
-+ (void)onButtonClicked {
-    if (menuView) {
-        menuView.hidden = !menuView.hidden;
-        // Đưa menu lên lớp trên cùng để không bị che khuất bởi UI của game/app
-        [menuView.superview bringSubviewToFront:menuView];
-        [menuView.superview bringSubviewToFront:floatingBtn];
+- (UIWindow *)getKeyWindow {
+    for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+        if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
+            UIWindowScene *windowScene = (UIWindowScene *)scene;
+            for (UIWindow *window in windowScene.windows) {
+                if (window.isKeyWindow) {
+                    return window;
+                }
+            }
+        }
     }
+    return nil;
 }
 
-+ (void)onSwitchChanged:(UISwitch *)sender {
-    isAIControlled = sender.isOn;
-    if (isAIControlled) {
-        NSLog(@"[AI Tweak] Đã BẬT AI điều khiển.");
-        sendDataToAI(apiKeyField.text, @"Phân tích trạng thái màn hình hiện tại và đưa ra thao tác.");
-    } else {
-        NSLog(@"[AI Tweak] Đã TẮT AI điều khiển.");
-    }
-}
-
-+ (void)onSaveClicked {
-    [apiKeyField resignFirstResponder];
-    [[NSUserDefaults standardUserDefaults] setObject:apiKeyField.text forKey:@"AITweak_APIKey"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-    
-    UIWindow *window = [UIApplication sharedApplication].keyWindow;
-    UIViewController *rootVC = window.rootViewController;
-    while (rootVC.presentedViewController) {
-        rootVC = rootVC.presentedViewController;
-    }
-    
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Thành công" message:@"Đã lưu API Key!" preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-    [rootVC presentViewController:alert animated:YES completion:nil];
-}
-@end
-
-// Gửi request API
-void sendDataToAI(NSString *apiKey, NSString *prompt) {
-    if (apiKey.length == 0) {
-        NSLog(@"[AI Tweak] Chưa nhập API Key!");
+- (void)setupUI {
+    UIWindow *window = [self getKeyWindow];
+    if (!window) {
+        // Thử lại nếu game chưa render xong cửa sổ chính
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self setupUI];
+        });
         return;
     }
-    
-    NSURL *url = [NSURL URLWithString:@"https://api.openai.com/v1/chat/completions"];
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    [request setHTTPMethod:@"POST"];
-    [request setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
-    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    
-    NSDictionary *body = @{
-        @"model": @"gpt-4o-mini",
-        @"messages": @[@{@"role": @"user", @"content": prompt}]
-    };
-    
-    NSError *error;
-    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:body options:0 error:&error];
-    [request setHTTPBody:jsonData];
-    
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (error) {
-            NSLog(@"[AI Tweak Error] %@", error.localizedDescription);
-            return;
-        }
-        NSLog(@"[AI Tweak Success] Đã gọi API thành công.");
-    }];
-    [task resume];
-}
 
-// Khởi tạo giao diện
-void setupUI() {
-    UIWindow *window = [UIApplication sharedApplication].keyWindow;
-    if (!window) return;
+    // 1. Tạo nút bật/tắt menu có hình ảnh nhân vật
+    self.toggleButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.toggleButton.frame = CGRectMake(30, 80, 56, 56);
+    self.toggleButton.layer.cornerRadius = 28;
+    self.toggleButton.clipsToBounds = YES;
+    self.toggleButton.layer.borderWidth = 2.0;
+    self.toggleButton.layer.borderColor = [UIColor colorWithRed:0.45 green:0.85 blue:0.45 alpha:1.0].CGColor;
     
-    // Nếu đã tạo rồi thì không tạo đè nữa
-    if (floatingBtn && menuView) return;
-    
-    // 1. Tạo Nút Nổi
-    if (!floatingBtn) {
-        floatingBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-        floatingBtn.frame = CGRectMake(40, 100, 50, 50);
-        floatingBtn.backgroundColor = [UIColor systemBlueColor];
-        [floatingBtn setTitle:@"🤖" forState:UIControlStateNormal];
-        floatingBtn.layer.cornerRadius = 25;
-        floatingBtn.layer.shadowColor = [UIColor blackColor].CGColor;
-        floatingBtn.layer.shadowRadius = 4;
-        floatingBtn.layer.shadowOpacity = 0.5;
-        
-        [floatingBtn addTarget:[AITouchHandler class] action:@selector(onButtonClicked) forControlEvents:UIControlEventTouchUpInside];
-        
-        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:[AITouchHandler class] action:@selector(handlePan:)];
-        [floatingBtn addGestureRecognizer:pan];
-        
-        [window addSubview:floatingBtn];
+    // Nạp ảnh icon (Đặt file tên "menu_icon.png" vào thư mục gốc của file .ipa khi đóng gói)
+    UIImage *iconImg = [UIImage imageNamed:@"menu_icon.png"];
+    if (!iconImg) {
+        NSString *bundlePath = [[NSBundle mainBundle] pathForResource:@"menu_icon" ofType:@"png"];
+        iconImg = [UIImage imageWithContentsOfFile:bundlePath];
     }
     
-    // 2. Tạo Menu View
-    if (!menuView) {
-        menuView = [[UIView alloc] initWithFrame:CGRectMake(40, 160, 260, 195)];
-        menuView.backgroundColor = [UIColor colorWithWhite:0.12 alpha:0.95];
-        menuView.layer.cornerRadius = 14;
-        menuView.layer.borderWidth = 1;
-        // Đã sửa lỗi thiếu .CGColor ở đây
-        menuView.layer.borderColor = [UIColor colorWithWhite:0.3 alpha:1.0].CGColor;
-        menuView.hidden = YES; // Mặc định ẩn, bấm nút nổi mới hiện
-        
-        // Tiêu đề
-        UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 12, 230, 22)];
-        titleLabel.text = @"🤖 AI Controller Menu";
-        titleLabel.textColor = [UIColor whiteColor];
-        titleLabel.font = [UIFont boldSystemFontOfSize:15];
-        [menuView addSubview:titleLabel];
-        
-        // Ô nhập API Key
-        apiKeyField = [[UITextField alloc] initWithFrame:CGRectMake(15, 42, 230, 35)];
-        apiKeyField.placeholder = @"Dán API Key vào đây...";
-        apiKeyField.borderStyle = UITextBorderStyleRoundedRect;
-        apiKeyField.font = [UIFont systemFontOfSize:12];
-        apiKeyField.clearButtonMode = UITextFieldViewModeWhileEditing;
-        [menuView addSubview:apiKeyField];
-        
-        // Nhãn switch
-        UILabel *switchLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 90, 160, 30)];
-        switchLabel.text = @"Bật AI Điều Khiển";
-        switchLabel.textColor = [UIColor whiteColor];
-        switchLabel.font = [UIFont systemFontOfSize:13];
-        [menuView addSubview:switchLabel];
-        
-        // Switch bật tắt AI
-        aiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(190, 90, 0, 0)];
-        [aiSwitch addTarget:[AITouchHandler class] action:@selector(onSwitchChanged:) forControlEvents:UIControlEventValueChanged];
-        [menuView addSubview:aiSwitch];
-        
-        // Nút lưu
-        UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-        saveBtn.frame = CGRectMake(15, 138, 230, 36);
-        [saveBtn setTitle:@"Lưu API Key" forState:UIControlStateNormal];
-        [saveBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        saveBtn.backgroundColor = [UIColor systemGreenColor];
-        saveBtn.layer.cornerRadius = 8;
-        [saveBtn addTarget:[AITouchHandler class] action:@selector(onSaveClicked) forControlEvents:UIControlEventTouchUpInside];
-        [menuView addSubview:saveBtn];
-        
-        [window addSubview:menuView];
+    if (iconImg) {
+        [self.toggleButton setImage:iconImg forState:UIControlStateNormal];
+        self.toggleButton.imageView.contentMode = UIViewContentModeScaleAspectFill;
+    } else {
+        // Màu nền dự phòng nếu chưa chép file menu_icon.png vào IPA
+        self.toggleButton.backgroundColor = [UIColor systemGreenColor];
+        [self.toggleButton setTitle:@"MC" forState:UIControlStateNormal];
     }
+
+    // Sự kiện bấm để bật/tắt menu
+    [self.toggleButton addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
+    
+    // Sự kiện kéo thả nút đi khắp màn hình
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+    [self.toggleButton addGestureRecognizer:pan];
+
+    // 2. Tạo khung Menu chính
+    CGFloat menuWidth = 280;
+    CGFloat menuHeight = 165;
+    self.menuContainer = [[UIView alloc] initWithFrame:CGRectMake((window.bounds.size.width - menuWidth) / 2,
+                                                                  (window.bounds.size.height - menuHeight) / 2,
+                                                                  menuWidth,
+                                                                  menuHeight)];
+    self.menuContainer.backgroundColor = [UIColor colorWithRed:0.10 green:0.12 blue:0.10 alpha:0.92];
+    self.menuContainer.layer.cornerRadius = 12;
+    self.menuContainer.layer.borderWidth = 1.5;
+    self.menuContainer.layer.borderColor = [UIColor colorWithRed:0.45 green:0.85 blue:0.45 alpha:1.0].CGColor;
+    self.menuContainer.hidden = YES;
+    self.isMenuVisible = NO;
+
+    // Tiêu đề Menu
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 12, menuWidth - 30, 24)];
+    titleLabel.text = @"MINECRAFT PE INFO MENU";
+    titleLabel.textColor = [UIColor colorWithRed:0.55 green:0.95 blue:0.55 alpha:1.0];
+    titleLabel.font = [UIFont boldSystemFontOfSize:15];
+    titleLabel.textAlignment = NSTextAlignmentCenter;
+    [self.menuContainer addSubview:titleLabel];
+
+    // Đường kẻ ngăn cách
+    UIView *divider = [[UIView alloc] initWithFrame:CGRectMake(15, 42, menuWidth - 30, 1)];
+    divider.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.2];
+    [self.menuContainer addSubview:divider];
+
+    // Hiển thị Tên Player
+    self.playerLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 55, menuWidth - 30, 24)];
+    self.playerLabel.textColor = [UIColor whiteColor];
+    self.playerLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
+    [self.menuContainer addSubview:self.playerLabel];
+
+    // Hiển thị Phiên bản Minecraft
+    self.versionLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 85, menuWidth - 30, 24)];
+    self.versionLabel.textColor = [UIColor lightGrayColor];
+    self.versionLabel.font = [UIFont systemFontOfSize:13];
+    [self.menuContainer addSubview:self.versionLabel];
+
+    // Nút làm mới dữ liệu (Refresh)
+    UIButton *refreshBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    refreshBtn.frame = CGRectMake(15, 120, menuWidth - 30, 32);
+    refreshBtn.backgroundColor = [UIColor colorWithRed:0.25 green:0.65 blue:0.30 alpha:1.0];
+    refreshBtn.layer.cornerRadius = 6;
+    [refreshBtn setTitle:@"Cập nhật thông tin" forState:UIControlStateNormal];
+    [refreshBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    refreshBtn.titleLabel.font = [UIFont boldSystemFontOfSize:13];
+    [refreshBtn addTarget:self action:@selector(refreshInfo) forControlEvents:UIControlEventTouchUpInside];
+    [self.menuContainer addSubview:refreshBtn];
+
+    [self refreshInfo];
+
+    [window addSubview:self.menuContainer];
+    [window addSubview:self.toggleButton];
 }
 
-// Bắt sự kiện Window để load menu đè lên app/game
-@interface UIWindow (AIHook)
-@end
-@implementation UIWindow (AIHook)
-- (void)didAddSubview:(UIView *)subview {
-    [super didAddSubview:subview];
-    setupUI();
+- (void)refreshInfo {
+    NSString *playerName = GetMinecraftPlayerName();
+    NSString *mcVersion = GetMinecraftVersion();
+    
+    self.playerLabel.text = [NSString stringWithFormat:@"👤 Player: %@", playerName];
+    self.versionLabel.text = [NSString stringWithFormat:@"🎮 Phiên bản: %@", mcVersion];
 }
+
+- (void)toggleMenu {
+    self.isMenuVisible = !self.isMenuVisible;
+    if (self.isMenuVisible) {
+        [self refreshInfo];
+    }
+    self.menuContainer.hidden = !self.isMenuVisible;
+}
+
+- (void)handlePan:(UIPanGestureRecognizer *)recognizer {
+    UIView *superview = recognizer.view.superview;
+    CGPoint translation = [recognizer translationInView:superview];
+    recognizer.view.center = CGPointMake(recognizer.view.center.x + translation.x,
+                                         recognizer.view.center.y + translation.y);
+    [recognizer setTranslation:CGPointZero inView:superview];
+}
+
 @end
 
-// Constructor khởi chạy
-__attribute__((constructor)) static void initAITweak() {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        setupUI();
-        NSString *savedKey = [[NSUserDefaults standardUserDefaults] stringForKey:@"AITweak_APIKey"];
-        if (savedKey && apiKeyField) {
-            apiKeyField.text = savedKey;
-        }
+// ==========================================
+// 4. ĐIỂM KHỞI CHẠY DYLIB (CONSTRUCTOR)
+// ==========================================
+
+__attribute__((constructor)) static void EntryPoint() {
+    InitMinecraftHooks();
+    
+    // Đợi 3 giây sau khi mở game để UIKit khởi tạo xong màn hình rồi mới gắn nút
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [[MCPEFloatingMenu sharedInstance] setupUI];
     });
 }
